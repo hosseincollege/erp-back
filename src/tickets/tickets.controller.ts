@@ -1,55 +1,42 @@
-/**
- * @file src/tickets/tickets.controller.ts
- * @description Tickets controller for ERP Pro backend
- */
-
 import {
-  Body,
   Controller,
   Get,
-  Param,
   Post,
-  UnauthorizedException,
+  Body,
+  Param,
+  Query,
+  UseGuards,
 } from '@nestjs/common';
-
-import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { CreateTicketDto } from './dto/create-ticket.dto';
 import { TicketsService } from './tickets.service';
-
-type CurrentAuthenticatedUser = {
-  id?: string;
-  sub?: string;
-  email?: string;
-  role?: string;
-};
+import { CreateTicketDto } from './dto/create-ticket.dto';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 
 @Controller('tickets')
+@UseGuards(JwtAuthGuard)
 export class TicketsController {
   constructor(private readonly ticketsService: TicketsService) {}
 
   @Post()
-  async create(
+  create(
     @Body() createTicketDto: CreateTicketDto,
-    @CurrentUser() currentUser: CurrentAuthenticatedUser,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    const currentUserId = currentUser?.id ?? currentUser?.sub;
-
-    if (!currentUserId) {
-      throw new UnauthorizedException(
-        'هویت کاربر برای ثبت تیکت قابل تشخیص نیست.',
-      );
-    }
-
-    return this.ticketsService.create(createTicketDto, currentUserId);
+    return this.ticketsService.create(createTicketDto, user.id);
   }
 
   @Get()
-  async findAll() {
-    return this.ticketsService.findAll();
+  findAll(
+    @Query('status') status?: string,
+    @Query('priority') priority?: string,
+    @Query('search') search?: string,
+  ) {
+    return this.ticketsService.findAll({ status, priority, search });
   }
 
   @Get(':id')
-  async findOne(@Param('id') id: string) {
+  findOne(@Param('id') id: string) {
     return this.ticketsService.findOne(id);
   }
 }

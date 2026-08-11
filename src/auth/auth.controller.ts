@@ -1,52 +1,44 @@
-/**
- * @file src/auth/auth.controller.ts
- * @type backend
- * @description کنترلر احراز هویت برای ثبت‌نام و ورود کاربران ERP Pro
- */
+// File: backend/src/auth/auth.controller.ts
 
 import {
   Body,
   Controller,
-  HttpCode,
-  HttpStatus,
+  Get,
   Post,
+  Req,
+  UnauthorizedException,
+  UseGuards,
 } from '@nestjs/common';
 
 import { AuthService } from './auth.service';
-import { Public } from './decorators/public.decorator';
-import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
+import { LoginDto } from './dto/login.dto';
+import { Public } from './decorators/public.decorator';
 
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
-  /**
-   * ثبت‌نام کاربر جدید
-   *
-   * POST /auth/register
-   *
-   * این endpoint عمومی است، زیرا کاربر پیش از ثبت‌نام
-   * هنوز access token ندارد.
-   */
   @Public()
   @Post('register')
-  @HttpCode(HttpStatus.CREATED)
-  register(@Body() registerDto: RegisterDto) {
-    return this.authService.register(registerDto);
+  register(@Body() dto: RegisterDto) {
+    return this.authService.register(dto);
   }
 
-  /**
-   * ورود کاربر و دریافت access token
-   *
-   * POST /auth/login
-   *
-   * این endpoint عمومی است، زیرا وظیفه آن صدور اولین توکن کاربر است.
-   */
   @Public()
   @Post('login')
-  @HttpCode(HttpStatus.OK)
-  login(@Body() loginDto: LoginDto) {
-    return this.authService.login(loginDto);
+  login(@Body() dto: LoginDto) {
+    return this.authService.login(dto);
+  }
+
+  @Get('me')
+  getMe(@Req() request: any) {
+    const userId = request.user?.id;
+
+    if (!userId) {
+      throw new UnauthorizedException('کاربر احراز هویت نشده است');
+    }
+
+    return this.authService.getMe(userId);
   }
 }

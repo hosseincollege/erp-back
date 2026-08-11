@@ -1,16 +1,35 @@
-import { IsEmail, IsEnum, IsNotEmpty, MinLength } from 'class-validator';
-import { UserRole } from '@prisma/client';
+// File: backend/src/auth/dto/register.dto.ts
+
+import {
+  IsEmail,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  MinLength,
+} from 'class-validator';
 
 export class RegisterDto {
+  @IsString()
   @IsNotEmpty()
-  name: string;
+  username: string;
 
+  @IsOptional()
   @IsEmail()
-  email: string;
+  email?: string;
 
-  @MinLength(6)
+  @IsOptional()
+  @IsString()
+  phone?: string;
+
+  @IsString()
+  @IsNotEmpty()
+  firstName: string;
+
+  @IsString()
+  @IsNotEmpty()
+  lastName: string;
+
+  @IsString()
+  @MinLength(8)
   password: string;
-
-  @IsEnum(UserRole)
-  role: UserRole;
 }

@@ -1,67 +1,27 @@
-/**
- * @file: src/auth/strategies/jwt.strategy.ts
- * @type: backend
- * @description: JWT strategy برای اعتبارسنجی access token و الصاق کاربر احراز هویت‌شده به request
- */
-
+// File: backend/src/auth/strategies/jwt.strategy.ts
 import { Injectable, UnauthorizedException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
-import { UserRole } from '@prisma/client';
 import { ExtractJwt, Strategy } from 'passport-jwt';
-import { PrismaService } from '../../prisma/prisma.service';
+import { AuthService } from '../auth.service';
 
-export interface JwtPayload {
-  sub: string;
-  email: string;
-  role: UserRole;
-}
-
-export interface AuthenticatedUser {
-  id: string;
-  name: string;
-  email: string;
-  role: UserRole;
-}
+// تعریف تایپ برای رفع خطای CurrentUser Decorator
+export type AuthenticatedUser = any;
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
-  constructor(
-    private readonly configService: ConfigService,
-    private readonly prisma: PrismaService,
-  ) {
-    const jwtSecret = configService.get<string>('JWT_SECRET');
-
-    if (!jwtSecret) {
-      throw new Error('JWT_SECRET is not defined in .env');
-    }
-
+  constructor(private readonly authService: AuthService) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey: jwtSecret,
+      secretOrKey: process.env.JWT_SECRET || 'erp-pro-secret',
     });
   }
 
-  async validate(payload: JwtPayload): Promise<AuthenticatedUser> {
-    if (!payload?.sub || !payload?.email || !payload?.role) {
-      throw new UnauthorizedException('Invalid token payload');
-    }
-
-    const user = await this.prisma.user.findUnique({
-      where: { id: payload.sub },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        role: true,
-      },
-    });
-
+  async validate(payload: any): Promise<AuthenticatedUser> {
+    const user = await this.authService.validateUser(payload.sub);
     if (!user) {
-      throw new UnauthorizedException('User no longer exists');
+      throw new UnauthorizedException('دسترسی غیرمجاز');
     }
-
     return user;
   }
 }
