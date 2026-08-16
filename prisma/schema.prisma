@@ -8,12 +8,6 @@ datasource db {
   provider = "postgresql"
 }
 
-/**
- * |--------------------------------------------------------------------------
- * | Enums
- * |--------------------------------------------------------------------------
- */
-
 enum DeploymentMode {
   CLOUD
   ON_PREMISE
@@ -85,17 +79,6 @@ enum AuditAction {
   PASSWORD_RESET
 }
 
-/**
- * |--------------------------------------------------------------------------
- * | Installation
- * |--------------------------------------------------------------------------
- * |
- * | مشخصات نصب فعلی ERP را نگه‌داری می‌کند.
- * | در نسخه On-Premise معمولاً یک رکورد دارد.
- * | در نسخه Cloud می‌تواند چند سازمان را مدیریت کند.
- * |--------------------------------------------------------------------------
- */
-
 model Installation {
   id                    String         @id @default(cuid())
   name                  String?
@@ -114,12 +97,6 @@ model Installation {
   @@index([deploymentMode])
   @@map("installations")
 }
-
-/**
- * |--------------------------------------------------------------------------
- * | Organization / Tenant
- * |--------------------------------------------------------------------------
- */
 
 model Organization {
   id             String        @id @default(cuid())
@@ -152,12 +129,6 @@ model Organization {
   @@map("organizations")
 }
 
-/**
- * |--------------------------------------------------------------------------
- * | User
- * |--------------------------------------------------------------------------
- */
-
 model User {
   id           String     @id @default(cuid())
   username     String     @unique
@@ -186,15 +157,6 @@ model User {
   @@map("users")
 }
 
-/**
- * |--------------------------------------------------------------------------
- * | Organization Membership
- * |--------------------------------------------------------------------------
- * |
- * | یک کاربر می‌تواند عضو چند سازمان باشد و در هر سازمان نقش متفاوتی داشته باشد.
- * |--------------------------------------------------------------------------
- */
-
 model OrganizationMember {
   id             String           @id @default(cuid())
   organizationId String
@@ -207,19 +169,14 @@ model OrganizationMember {
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  roles        MemberRole[]
+
+  roles MemberRole[]
 
   @@unique([organizationId, userId])
   @@index([userId])
   @@index([organizationId, status])
   @@map("organization_members")
 }
-
-/**
- * |--------------------------------------------------------------------------
- * | Roles & Permissions
- * |--------------------------------------------------------------------------
- */
 
 model Role {
   id             String    @id @default(cuid())
@@ -232,9 +189,10 @@ model Role {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
-  organization Organization?    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  permissions  RolePermission[]
-  members      MemberRole[]
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  permissions RolePermission[]
+  members     MemberRole[]
 
   @@unique([key, organizationId])
   @@index([organizationId])
@@ -275,15 +233,6 @@ model MemberRole {
   @@map("member_roles")
 }
 
-/**
- * |--------------------------------------------------------------------------
- * | Activation Codes
- * |--------------------------------------------------------------------------
- * |
- * | برای راه‌اندازی اولیه، دعوت کاربر، دمو یا فعال‌سازی اشتراک.
- * |--------------------------------------------------------------------------
- */
-
 model ActivationCode {
   id             String    @id @default(cuid())
   codeHash       String    @unique
@@ -307,15 +256,9 @@ model ActivationCode {
   @@map("activation_codes")
 }
 
-/**
- * |--------------------------------------------------------------------------
- * | Tickets
- * |--------------------------------------------------------------------------
- */
-
 model Ticket {
   id             String  @id @default(cuid())
-  organizationId String
+  organizationId String?
   creatorId      String
   assigneeId     String?
 
@@ -333,10 +276,11 @@ model Ticket {
   createdAt    DateTime         @default(now())
   updatedAt    DateTime         @updatedAt
 
-  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  creator      User            @relation("TicketCreator", fields: [creatorId], references: [id], onDelete: Restrict)
-  assignee     User?           @relation("TicketAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
-  messages     TicketMessage[]
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  creator      User          @relation("TicketCreator", fields: [creatorId], references: [id], onDelete: Restrict)
+  assignee     User?         @relation("TicketAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+
+  messages TicketMessage[]
 
   @@unique([organizationId, ticketNumber])
   @@index([organizationId, status])
@@ -363,12 +307,6 @@ model TicketMessage {
   @@index([authorId])
   @@map("ticket_messages")
 }
-
-/**
- * |--------------------------------------------------------------------------
- * | Audit Logs
- * |--------------------------------------------------------------------------
- */
 
 model AuditLog {
   id             String      @id @default(cuid())

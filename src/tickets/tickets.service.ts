@@ -1,3 +1,8 @@
+/**
+ * @file backend/src/tickets/tickets.service.ts
+ * @description سرویس تیکت‌ها — ایجاد، فهرست و جزئیات تیکت.
+ */
+
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTicketDto } from './dto/create-ticket.dto';
@@ -18,14 +23,15 @@ export class TicketsService {
     return this.prisma.ticket.create({
       data: {
         ticketNumber: nextTicketNumber,
-        organizationId: createTicketDto.organizationId,
         subject: createTicketDto.subject,
         description: createTicketDto.description,
         type: createTicketDto.type,
         priority: createTicketDto.priority || 'MEDIUM',
         visibility: createTicketDto.visibility,
         category: createTicketDto.category,
-        dueAt: createTicketDto.dueAt ? new Date(createTicketDto.dueAt) : undefined,
+        dueAt: createTicketDto.dueAt
+          ? new Date(createTicketDto.dueAt)
+          : undefined,
         creatorId: userId,
       },
       include: {
@@ -41,7 +47,9 @@ export class TicketsService {
     });
   }
 
-  async findAll(filters: { status?: string; priority?: string; search?: string } = {}) {
+  async findAll(
+    filters: { status?: string; priority?: string; search?: string } = {},
+  ) {
     const { status, priority, search } = filters;
 
     return this.prisma.ticket.findMany({

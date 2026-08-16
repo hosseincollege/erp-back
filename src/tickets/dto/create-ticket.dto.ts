@@ -1,4 +1,7 @@
-// File: backend/src/tickets/dto/create-ticket.dto.ts
+/**
+ * @file backend/src/tickets/dto/create-ticket.dto.ts
+ * @description CreateTicketDto — قرارداد ورودی ثبت تیکت.
+ */
 
 import {
   IsDateString,
@@ -15,10 +18,6 @@ import {
 } from '@prisma/client';
 
 export class CreateTicketDto {
-  @IsString()
-  @IsNotEmpty()
-  organizationId: string;
-
   @IsString()
   @IsNotEmpty()
   subject: string;
