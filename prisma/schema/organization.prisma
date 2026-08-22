@@ -1,0 +1,128 @@
+// File: backend/prisma/schema/organization.prisma
+
+enum OrganizationStatus {
+  ACTIVE
+  SUSPENDED
+  ARCHIVED
+}
+
+enum MembershipStatus {
+  ACTIVE
+  INVITED
+  SUSPENDED
+  REMOVED
+}
+
+model Organization {
+  id             String  @id @default(cuid())
+  installationId String?
+
+  // اگر مدل Installation در فایل‌های دیگر تعریف شده است:
+  installation Installation? @relation(fields: [installationId], references: [id], onDelete: SetNull)
+
+  name       String
+  slug       String             @unique
+  legalName  String?
+  nationalId String?
+  phone      String?
+  email      String?
+  address    String?
+  logoUrl    String?
+  status     OrganizationStatus @default(ACTIVE)
+
+  ownerId String?
+  owner   User?   @relation("OrganizationOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+
+  settings OrganizationSettings?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Core relations
+  memberships OrganizationMember[]
+  tickets     Ticket[]
+  auditLogs   AuditLog[]
+  roles       Role[]
+  branches    Branch[]
+  departments Department[]
+
+  // Accounting relations
+  accountingInvoices AccountingInvoice[]
+
+  // Human Resources relations
+  employees     Employee[]
+  leaveRequests LeaveRequest[]
+
+  @@index([installationId])
+  @@index([status])
+  @@map("organizations")
+}
+
+model OrganizationMember {
+  id             String           @id @default(cuid())
+  organizationId String
+  userId         String
+  status         MembershipStatus @default(ACTIVE)
+  joinedAt       DateTime?
+  invitedAt      DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  roles MemberRole[]
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+  @@index([organizationId, status])
+  @@map("organization_members")
+}
+
+model Branch {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  code           String   @unique
+  address        String?
+  phone          String?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  departments  Department[]
+
+  // Accounting relations
+  accountingInvoices AccountingInvoice[]
+
+  // Human Resources relations
+  employees Employee[]
+
+  @@index([organizationId])
+  @@map("branches")
+}
+
+model Department {
+  id             String   @id @default(cuid())
+  organizationId String
+  branchId       String?
+  name           String
+  code           String   @unique
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  branch       Branch?      @relation(fields: [branchId], references: [id], onDelete: SetNull)
+
+  // Accounting relations
+  accountingInvoices AccountingInvoice[]
+
+  // Human Resources relations
+  employees Employee[]
+
+  @@index([organizationId])
+  @@index([branchId])
+  @@map("departments")
+}

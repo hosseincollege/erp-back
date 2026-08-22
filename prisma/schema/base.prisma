@@ -1,0 +1,56 @@
+// File: backend/prisma/schema/base.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum DeploymentMode {
+  CLOUD
+  ON_PREMISE
+}
+
+model Installation {
+  id                    String         @id @default(cuid())
+  name                  String?
+  deploymentMode        DeploymentMode @default(ON_PREMISE)
+  initialSetupCompleted Boolean        @default(false)
+  publicRegistration    Boolean        @default(false)
+  demoEnabled           Boolean        @default(false)
+  requireActivationCode Boolean        @default(true)
+  timezone              String         @default("Asia/Tehran")
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+
+  organizations   Organization[]
+  activationCodes ActivationCode[]
+
+  @@index([deploymentMode])
+  @@map("installations")
+}
+
+model ActivationCode {
+  id             String    @id @default(cuid())
+  codeHash       String    @unique
+  type           String
+  organizationId String?
+  installationId String?
+  createdById    String?
+  expiresAt      DateTime?
+  usedAt         DateTime?
+  maxUses        Int       @default(1)
+  usedCount      Int       @default(0)
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+
+  installation Installation? @relation(fields: [installationId], references: [id], onDelete: Cascade)
+  createdBy    User?         @relation("ActivationCodeCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([installationId])
+  @@index([organizationId])
+  @@index([type, isActive])
+  @@map("activation_codes")
+}

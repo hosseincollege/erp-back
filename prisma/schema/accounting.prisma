@@ -1,0 +1,151 @@
+/**
+ * مسیر فایل:
+ * backend/prisma/schema/accounting.prisma
+ * هدف:
+ * مدل‌های اصلی ماژول حسابداری:
+ * - فاکتور خرید
+ * - ردیف‌های فاکتور
+ * - تاریخچه تغییر وضعیت
+ * - پرداخت‌های فاکتور
+ * همه مدل‌ها با organizationId محدود می‌شوند تا داده‌های
+ * سازمان‌های مختلف در ERP از هم جدا و امن باقی بمانند.
+ */
+
+enum AccountingInvoiceStatus {
+  DRAFT
+  SUBMITTED
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum AccountingPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum AccountingPaymentMethod {
+  CASH
+  BANK_TRANSFER
+  CHEQUE
+  CARD
+  ONLINE
+  OTHER
+}
+
+model AccountingInvoice {
+  id             String  @id @default(cuid())
+  organizationId String
+  createdById    String
+  branchId       String?
+  departmentId   String?
+
+  documentNumber String
+  title          String
+  description    String?
+  vendorName     String?
+
+  /**
+   * در نسخه فعلی فقط invoice داریم.
+   * این فیلد برای توسعه آینده به payment request و سایر اسناد مالی است.
+   */
+  moduleType String @default("accounting")
+
+  status   AccountingInvoiceStatus @default(PENDING_REVIEW)
+  priority AccountingPriority      @default(MEDIUM)
+
+  /**
+   * مبلغ نهایی در بک‌اند محاسبه می‌شود؛
+   * نباید به total ارسال‌شده توسط فرانت اعتماد شود.
+   */
+  totalAmount Decimal   @db.Decimal(18, 2)
+  currency    String    @default("IRR")
+  dueDate     DateTime?
+
+  metadata Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User         @relation("AccountingInvoiceCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  branch       Branch?      @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  department   Department?  @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+
+  lineItems     AccountingInvoiceLineItem[]
+  statusHistory AccountingInvoiceStatusHistory[]
+  payments      AccountingInvoicePayment[]
+
+  @@unique([organizationId, documentNumber])
+  @@index([organizationId, createdAt])
+  @@index([organizationId, status])
+  @@index([organizationId, priority])
+  @@index([organizationId, dueDate])
+  @@index([createdById])
+  @@index([branchId])
+  @@index([departmentId])
+  @@map("accounting_invoices")
+}
+
+model AccountingInvoiceLineItem {
+  id        String @id @default(cuid())
+  invoiceId String
+
+  description String
+  quantity    Decimal @db.Decimal(18, 3)
+  unitPrice   Decimal @db.Decimal(18, 2)
+  taxRate     Decimal @default(0) @db.Decimal(5, 2)
+  total       Decimal @db.Decimal(18, 2)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  invoice AccountingInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@map("accounting_invoice_line_items")
+}
+
+model AccountingInvoiceStatusHistory {
+  id        String                  @id @default(cuid())
+  invoiceId String
+  actedById String
+  status    AccountingInvoiceStatus
+  note      String?
+  createdAt DateTime                @default(now())
+
+  invoice AccountingInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  actedBy User              @relation("AccountingStatusActor", fields: [actedById], references: [id], onDelete: Restrict)
+
+  @@index([invoiceId, createdAt])
+  @@index([actedById])
+  @@map("accounting_invoice_status_history")
+}
+
+model AccountingInvoicePayment {
+  id           String @id @default(cuid())
+  invoiceId    String
+  receivedById String
+
+  paidAmount      Decimal                  @db.Decimal(18, 2)
+  paidAt          DateTime                 @default(now())
+  method          AccountingPaymentMethod? @default(BANK_TRANSFER)
+  referenceNumber String?
+  note            String?
+  metadata        Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  invoice    AccountingInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  receivedBy User              @relation("AccountingPaymentReceiver", fields: [receivedById], references: [id], onDelete: Restrict)
+
+  @@index([invoiceId, paidAt])
+  @@index([receivedById])
+  @@map("accounting_invoice_payments")
+}

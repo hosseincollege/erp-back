@@ -1,0 +1,82 @@
+// File: backend/prisma/schema/tickets.prisma
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  WAITING_FOR_CUSTOMER
+  RESOLVED
+  CLOSED
+  CANCELLED
+}
+
+enum TicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum TicketType {
+  SUPPORT
+  INCIDENT
+  REQUEST
+  QUESTION
+  COMPLAINT
+}
+
+enum TicketVisibility {
+  INTERNAL
+  CUSTOMER
+}
+
+model Ticket {
+  id             String  @id @default(cuid())
+  organizationId String?
+  creatorId      String
+  assigneeId     String?
+
+  ticketNumber Int
+  subject      String
+  description  String
+  type         TicketType       @default(SUPPORT)
+  status       TicketStatus     @default(OPEN)
+  priority     TicketPriority   @default(MEDIUM)
+  visibility   TicketVisibility @default(INTERNAL)
+  category     String?
+  dueAt        DateTime?
+  resolvedAt   DateTime?
+  closedAt     DateTime?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  creator      User          @relation("TicketCreator", fields: [creatorId], references: [id], onDelete: Restrict)
+  assignee     User?         @relation("TicketAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+
+  messages TicketMessage[]
+
+  @@unique([organizationId, ticketNumber])
+  @@index([organizationId, status])
+  @@index([organizationId, priority])
+  @@index([creatorId])
+  @@index([assigneeId])
+  @@index([createdAt])
+  @@map("tickets")
+}
+
+model TicketMessage {
+  id         String   @id @default(cuid())
+  ticketId   String
+  authorId   String
+  body       String
+  isInternal Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  author User   @relation(fields: [authorId], references: [id], onDelete: Restrict)
+
+  @@index([ticketId, createdAt])
+  @@index([authorId])
+  @@map("ticket_messages")
+}
