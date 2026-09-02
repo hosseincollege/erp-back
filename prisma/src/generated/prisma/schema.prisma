@@ -1,0 +1,715 @@
+model AccountingInvoice {
+  id             String                           @id @default(cuid())
+  organizationId String
+  createdById    String
+  branchId       String?
+  departmentId   String?
+  documentNumber String
+  title          String
+  description    String?
+  vendorName     String?
+  /// *
+  ///    * در نسخه فعلی فقط invoice داریم.
+  ///    * این فیلد برای توسعه آینده به payment request و سایر اسناد مالی است.
+  moduleType     String                           @default("accounting")
+  status         AccountingInvoiceStatus          @default(PENDING_REVIEW)
+  priority       AccountingPriority               @default(MEDIUM)
+  /// *
+  ///    * مبلغ نهایی در بک‌اند محاسبه می‌شود؛
+  ///    * نباید به total ارسال‌شده توسط فرانت اعتماد شود.
+  totalAmount    Decimal                          @db.Decimal(18, 2)
+  currency       String                           @default("IRR")
+  dueDate        DateTime?
+  metadata       Json?
+  createdAt      DateTime                         @default(now())
+  updatedAt      DateTime                         @updatedAt
+  lineItems      AccountingInvoiceLineItem[]
+  payments       AccountingInvoicePayment[]
+  statusHistory  AccountingInvoiceStatusHistory[]
+  branch         Branch?                          @relation(fields: [branchId], references: [id])
+  createdBy      User                             @relation("AccountingInvoiceCreator", fields: [createdById], references: [id])
+  department     Department?                      @relation(fields: [departmentId], references: [id])
+  organization   Organization                     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, documentNumber])
+  @@index([organizationId, createdAt])
+  @@index([organizationId, status])
+  @@index([organizationId, priority])
+  @@index([organizationId, dueDate])
+  @@index([createdById])
+  @@index([branchId])
+  @@index([departmentId])
+  @@map("accounting_invoices")
+}
+
+model AccountingInvoiceLineItem {
+  id          String            @id @default(cuid())
+  invoiceId   String
+  description String
+  quantity    Decimal           @db.Decimal(18, 3)
+  unitPrice   Decimal           @db.Decimal(18, 2)
+  taxRate     Decimal           @default(0) @db.Decimal(5, 2)
+  total       Decimal           @db.Decimal(18, 2)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  invoice     AccountingInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@map("accounting_invoice_line_items")
+}
+
+model AccountingInvoiceStatusHistory {
+  id        String                  @id @default(cuid())
+  invoiceId String
+  actedById String
+  status    AccountingInvoiceStatus
+  note      String?
+  createdAt DateTime                @default(now())
+  actedBy   User                    @relation("AccountingStatusActor", fields: [actedById], references: [id])
+  invoice   AccountingInvoice       @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId, createdAt])
+  @@index([actedById])
+  @@map("accounting_invoice_status_history")
+}
+
+model AccountingInvoicePayment {
+  id              String                   @id @default(cuid())
+  invoiceId       String
+  receivedById    String
+  paidAmount      Decimal                  @db.Decimal(18, 2)
+  paidAt          DateTime                 @default(now())
+  method          AccountingPaymentMethod? @default(BANK_TRANSFER)
+  referenceNumber String?
+  note            String?
+  metadata        Json?
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
+  invoice         AccountingInvoice        @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  receivedBy      User                     @relation("AccountingPaymentReceiver", fields: [receivedById], references: [id])
+
+  @@index([invoiceId, paidAt])
+  @@index([receivedById])
+  @@map("accounting_invoice_payments")
+}
+
+enum AccountingInvoiceStatus {
+  DRAFT
+  SUBMITTED
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum AccountingPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum AccountingPaymentMethod {
+  CASH
+  BANK_TRANSFER
+  CHEQUE
+  CARD
+  ONLINE
+  OTHER
+}
+
+model AuditLog {
+  id             String        @id @default(cuid())
+  organizationId String?
+  userId         String?
+  action         AuditAction
+  entity         String
+  entityId       String?
+  metadata       Json?
+  ipAddress      String?
+  userAgent      String?
+  createdAt      DateTime      @default(now())
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  user           User?         @relation(fields: [userId], references: [id])
+
+  @@index([organizationId, createdAt])
+  @@index([userId, createdAt])
+  @@index([entity, entityId])
+  @@map("audit_logs")
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  LOGIN
+  LOGOUT
+  INVITE
+  ACTIVATE
+  DISABLE
+  PASSWORD_RESET
+}
+
+model User {
+  id                        String                           @id @default(cuid())
+  username                  String                           @unique
+  email                     String?                          @unique
+  phone                     String?                          @unique
+  firstName                 String
+  lastName                  String
+  passwordHash              String
+  avatarUrl                 String?
+  status                    UserStatus                       @default(ACTIVE)
+  isSystemUser              Boolean                          @default(false)
+  lastLoginAt               DateTime?
+  createdAt                 DateTime                         @default(now())
+  updatedAt                 DateTime                         @updatedAt
+  receivedInvoicePayments   AccountingInvoicePayment[]       @relation("AccountingPaymentReceiver")
+  accountingStatusActions   AccountingInvoiceStatusHistory[] @relation("AccountingStatusActor")
+  createdAccountingInvoices AccountingInvoice[]              @relation("AccountingInvoiceCreator")
+  createdCodes              ActivationCode[]                 @relation("ActivationCodeCreator")
+  auditLogs                 AuditLog[]
+  employeeProfiles          Employee[]                       @relation("EmployeeUserAccount")
+  leaveRequestStatusActions LeaveRequestStatusHistory[]      @relation("LeaveRequestStatusActor")
+  reviewedLeaveRequests     LeaveRequest[]                   @relation("LeaveRequestReviewer")
+  memberships               OrganizationMember[]
+  ownedOrganizations        Organization[]                   @relation("OrganizationOwner")
+  ticketMessages            TicketMessage[]
+  assignedTickets           Ticket[]                         @relation("TicketAssignee")
+  createdTickets            Ticket[]                         @relation("TicketCreator")
+
+  @@index([status])
+  @@index([lastLoginAt])
+  @@map("users")
+}
+
+enum UserStatus {
+  INVITED
+  ACTIVE
+  DISABLED
+  ARCHIVED
+}
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+  output          = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Installation {
+  id                    String           @id @default(cuid())
+  name                  String?
+  deploymentMode        DeploymentMode   @default(ON_PREMISE)
+  initialSetupCompleted Boolean          @default(false)
+  publicRegistration    Boolean          @default(false)
+  demoEnabled           Boolean          @default(false)
+  requireActivationCode Boolean          @default(true)
+  timezone              String           @default("Asia/Tehran")
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+  activationCodes       ActivationCode[]
+  organizations         Organization[]
+
+  @@index([deploymentMode])
+  @@map("installations")
+}
+
+model ActivationCode {
+  id             String        @id @default(cuid())
+  codeHash       String        @unique
+  type           String
+  organizationId String?
+  installationId String?
+  createdById    String?
+  expiresAt      DateTime?
+  usedAt         DateTime?
+  maxUses        Int           @default(1)
+  usedCount      Int           @default(0)
+  isActive       Boolean       @default(true)
+  createdAt      DateTime      @default(now())
+  createdBy      User?         @relation("ActivationCodeCreator", fields: [createdById], references: [id])
+  installation   Installation? @relation(fields: [installationId], references: [id], onDelete: Cascade)
+
+  @@index([installationId])
+  @@index([organizationId])
+  @@index([type, isActive])
+  @@map("activation_codes")
+}
+
+enum DeploymentMode {
+  CLOUD
+  ON_PREMISE
+}
+
+model Employee {
+  id             String         @id @default(cuid())
+  organizationId String
+  userId         String?
+  branchId       String?
+  departmentId   String?
+  employeeCode   String
+  firstName      String
+  lastName       String
+  nationalId     String?
+  phone          String?
+  email          String?
+  jobTitle       String?
+  employmentType EmploymentType @default(FULL_TIME)
+  status         EmployeeStatus @default(ACTIVE)
+  hiredAt        DateTime
+  terminatedAt   DateTime?
+  birthDate      DateTime?
+  address        String?
+  emergencyPhone String?
+  notes          String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  branch         Branch?        @relation(fields: [branchId], references: [id])
+  department     Department?    @relation(fields: [departmentId], references: [id])
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User?          @relation("EmployeeUserAccount", fields: [userId], references: [id])
+  leaveRequests  LeaveRequest[]
+
+  @@unique([organizationId, employeeCode])
+  @@index([organizationId, status])
+  @@index([organizationId, departmentId])
+  @@index([organizationId, branchId])
+  @@index([userId])
+  @@index([nationalId])
+  @@map("employees")
+}
+
+model LeaveRequest {
+  id              String                      @id @default(cuid())
+  organizationId  String
+  employeeId      String
+  reviewedById    String?
+  leaveType       LeaveType
+  status          LeaveRequestStatus          @default(PENDING)
+  startAt         DateTime
+  endAt           DateTime
+  durationMinutes Int
+  reason          String?
+  reviewerNote    String?
+  reviewedAt      DateTime?
+  cancelledAt     DateTime?
+  createdAt       DateTime                    @default(now())
+  updatedAt       DateTime                    @updatedAt
+  statusHistory   LeaveRequestStatusHistory[]
+  employee        Employee                    @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  organization    Organization                @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  reviewedBy      User?                       @relation("LeaveRequestReviewer", fields: [reviewedById], references: [id])
+
+  @@index([organizationId, status])
+  @@index([organizationId, startAt])
+  @@index([employeeId, startAt])
+  @@index([reviewedById])
+  @@map("leave_requests")
+}
+
+model LeaveRequestStatusHistory {
+  id             String             @id @default(cuid())
+  leaveRequestId String
+  actedById      String
+  status         LeaveRequestStatus
+  note           String?
+  createdAt      DateTime           @default(now())
+  actedBy        User               @relation("LeaveRequestStatusActor", fields: [actedById], references: [id])
+  leaveRequest   LeaveRequest       @relation(fields: [leaveRequestId], references: [id], onDelete: Cascade)
+
+  @@index([leaveRequestId, createdAt])
+  @@index([actedById])
+  @@map("leave_request_status_history")
+}
+
+enum EmployeeStatus {
+  ACTIVE
+  ON_LEAVE
+  INACTIVE
+  TERMINATED
+}
+
+enum EmploymentType {
+  FULL_TIME
+  PART_TIME
+  CONTRACTOR
+  INTERN
+  TEMPORARY
+}
+
+enum LeaveType {
+  ANNUAL
+  SICK
+  UNPAID
+  HOURLY
+  MATERNITY
+  PATERNITY
+  OTHER
+}
+
+enum LeaveRequestStatus {
+  DRAFT
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+model Warehouse {
+  id             String              @id @default(uuid())
+  organizationId String              @map("organization_id")
+  name           String
+  code           String
+  location       String?
+  isActive       Boolean             @default(true) @map("is_active")
+  createdAt      DateTime            @default(now()) @map("created_at")
+  updatedAt      DateTime            @updatedAt @map("updated_at")
+  balances       InventoryBalance[]
+  movementsFrom  InventoryMovement[] @relation("FromWarehouse")
+  movementsTo    InventoryMovement[] @relation("ToWarehouse")
+
+  @@unique([organizationId, code])
+  @@map("warehouses")
+}
+
+model Product {
+  id             String                  @id @default(uuid())
+  organizationId String                  @map("organization_id")
+  name           String
+  sku            String
+  barcode        String?
+  unit           String                  @default("عدد")
+  minStockLevel  Int                     @default(0) @map("min_stock_level")
+  isActive       Boolean                 @default(true) @map("is_active")
+  createdAt      DateTime                @default(now()) @map("created_at")
+  updatedAt      DateTime                @updatedAt @map("updated_at")
+  balances       InventoryBalance[]
+  movementItems  InventoryMovementItem[]
+
+  @@unique([organizationId, sku])
+  @@map("products")
+}
+
+model InventoryBalance {
+  id          String    @id @default(uuid())
+  productId   String    @map("product_id")
+  warehouseId String    @map("warehouse_id")
+  quantity    Int       @default(0)
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  product     Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, warehouseId])
+  @@map("inventory_balances")
+}
+
+model InventoryMovement {
+  id              String                  @id @default(uuid())
+  organizationId  String                  @map("organization_id")
+  type            InventoryMovementType
+  referenceNumber String?                 @map("reference_number")
+  fromWarehouseId String?                 @map("from_warehouse_id")
+  toWarehouseId   String?                 @map("to_warehouse_id")
+  notes           String?
+  createdAt       DateTime                @default(now()) @map("created_at")
+  items           InventoryMovementItem[]
+  fromWarehouse   Warehouse?              @relation("FromWarehouse", fields: [fromWarehouseId], references: [id])
+  toWarehouse     Warehouse?              @relation("ToWarehouse", fields: [toWarehouseId], references: [id])
+
+  @@map("inventory_movements")
+}
+
+model InventoryMovementItem {
+  id         String            @id @default(uuid())
+  movementId String            @map("movement_id")
+  productId  String            @map("product_id")
+  quantity   Int
+  movement   InventoryMovement @relation(fields: [movementId], references: [id], onDelete: Cascade)
+  product    Product           @relation(fields: [productId], references: [id])
+
+  @@map("inventory_movement_items")
+}
+
+enum InventoryMovementType {
+  RECEIPT
+  ISSUE
+  TRANSFER
+  ADJUSTMENT
+}
+
+model Organization {
+  id                 String                @id @default(cuid())
+  installationId     String?
+  name               String
+  slug               String                @unique
+  legalName          String?
+  nationalId         String?
+  registrationNumber String?
+  economicCode       String?
+  taxOffice          String?
+  phone              String?
+  email              String?
+  website            String?
+  address            String?
+  postalCode         String?
+  currency           String?               @default("IRR")
+  fiscalYearStart    String?               @default("01-01")
+  logoUrl            String?
+  status             OrganizationStatus    @default(ACTIVE)
+  ownerId            String?
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+  accountingInvoices AccountingInvoice[]
+  auditLogs          AuditLog[]
+  branches           Branch[]
+  departments        Department[]
+  employees          Employee[]
+  leaveRequests      LeaveRequest[]
+  memberships        OrganizationMember[]
+  settings           OrganizationSettings?
+  installation       Installation?         @relation(fields: [installationId], references: [id])
+  owner              User?                 @relation("OrganizationOwner", fields: [ownerId], references: [id])
+  roles              Role[]
+  tickets            Ticket[]
+
+  @@index([installationId])
+  @@index([status])
+  @@map("organizations")
+}
+
+model OrganizationMember {
+  id             String           @id @default(cuid())
+  organizationId String
+  userId         String
+  status         MembershipStatus @default(ACTIVE)
+  joinedAt       DateTime?
+  invitedAt      DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  roles          MemberRole[]
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+  @@index([organizationId, status])
+  @@map("organization_members")
+}
+
+model Branch {
+  id                 String              @id @default(cuid())
+  organizationId     String
+  name               String
+  code               String
+  address            String?
+  phone              String?
+  email              String? // فیلد جدید
+  postalCode         String? // فیلد جدید
+  isMain             Boolean             @default(false) // فیلد جدید
+  isActive           Boolean             @default(true)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  accountingInvoices AccountingInvoice[]
+  organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  departments        Department[]
+  employees          Employee[]
+
+  @@unique([organizationId, code]) // یکتایی کد در سطح هر سازمان
+  @@index([organizationId])
+  @@map("branches")
+}
+
+model Department {
+  id                 String              @id @default(cuid())
+  organizationId     String
+  branchId           String?
+  name               String
+  code               String
+  isActive           Boolean             @default(true)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  accountingInvoices AccountingInvoice[]
+  branch             Branch?             @relation(fields: [branchId], references: [id])
+  organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  employees          Employee[]
+
+  @@unique([organizationId, code]) // یکتایی کد در سطح هر سازمان
+  @@index([organizationId])
+  @@index([branchId])
+  @@map("departments")
+}
+
+enum OrganizationStatus {
+  ACTIVE
+  SUSPENDED
+  ARCHIVED
+}
+
+enum MembershipStatus {
+  ACTIVE
+  INVITED
+  SUSPENDED
+  REMOVED
+}
+
+model Role {
+  id             String           @id @default(cuid())
+  name           String
+  key            String
+  description    String?
+  scope          RoleScope        @default(ORGANIZATION)
+  isSystemRole   Boolean          @default(false)
+  organizationId String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  members        MemberRole[]
+  permissions    RolePermission[]
+  organization   Organization?    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([key, organizationId])
+  @@index([organizationId])
+  @@map("roles")
+}
+
+model Permission {
+  id          String           @id @default(cuid())
+  key         String           @unique
+  name        String
+  description String?
+  createdAt   DateTime         @default(now())
+  roles       RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model MemberRole {
+  memberId String
+  roleId   String
+  member   OrganizationMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  role     Role               @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([memberId, roleId])
+  @@map("member_roles")
+}
+
+enum RoleScope {
+  SYSTEM
+  ORGANIZATION
+}
+
+model OrganizationSettings {
+  id                        String       @id @default(cuid())
+  organizationId            String       @unique
+  timezone                  String?      @default("Asia/Tehran")
+  locale                    String?      @default("fa-IR")
+  currencyCode              String?      @default("IRR")
+  dateFormat                String?      @default("jYYYY/jMM/jDD")
+  publicRegistrationEnabled Boolean      @default(false)
+  bootstrapCompleted        Boolean      @default(false)
+  ticketingEnabled          Boolean      @default(true)
+  inventoryEnabled          Boolean      @default(false)
+  hrEnabled                 Boolean      @default(false)
+  crmEnabled                Boolean      @default(false)
+  salesEnabled              Boolean      @default(false)
+  accountingEnabled         Boolean      @default(false)
+  purchasingEnabled         Boolean      @default(false)
+  createdAt                 DateTime     @default(now())
+  updatedAt                 DateTime     @updatedAt
+  organization              Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@map("organization_settings")
+}
+
+model Ticket {
+  id             String           @id @default(cuid())
+  organizationId String?
+  creatorId      String
+  assigneeId     String?
+  ticketNumber   Int
+  subject        String
+  description    String
+  type           TicketType       @default(SUPPORT)
+  status         TicketStatus     @default(OPEN)
+  priority       TicketPriority   @default(MEDIUM)
+  visibility     TicketVisibility @default(INTERNAL)
+  category       String?
+  dueAt          DateTime?
+  resolvedAt     DateTime?
+  closedAt       DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  messages       TicketMessage[]
+  assignee       User?            @relation("TicketAssignee", fields: [assigneeId], references: [id])
+  creator        User             @relation("TicketCreator", fields: [creatorId], references: [id])
+  organization   Organization?    @relation(fields: [organizationId], references: [id])
+
+  @@unique([organizationId, ticketNumber])
+  @@index([organizationId, status])
+  @@index([organizationId, priority])
+  @@index([creatorId])
+  @@index([assigneeId])
+  @@index([createdAt])
+  @@map("tickets")
+}
+
+model TicketMessage {
+  id         String   @id @default(cuid())
+  ticketId   String
+  authorId   String
+  body       String
+  isInternal Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  author     User     @relation(fields: [authorId], references: [id])
+  ticket     Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId, createdAt])
+  @@index([authorId])
+  @@map("ticket_messages")
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  WAITING_FOR_CUSTOMER
+  RESOLVED
+  CLOSED
+  CANCELLED
+}
+
+enum TicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum TicketType {
+  SUPPORT
+  INCIDENT
+  REQUEST
+  QUESTION
+  COMPLAINT
+}
+
+enum TicketVisibility {
+  INTERNAL
+  CUSTOMER
+}

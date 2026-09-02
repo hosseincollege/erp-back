@@ -1,57 +1,37 @@
-// File: backend/prisma/schema/organization.prisma
-
-enum OrganizationStatus {
-  ACTIVE
-  SUSPENDED
-  ARCHIVED
-}
-
-enum MembershipStatus {
-  ACTIVE
-  INVITED
-  SUSPENDED
-  REMOVED
-}
-
 model Organization {
-  id             String  @id @default(cuid())
-  installationId String?
-
-  // اگر مدل Installation در فایل‌های دیگر تعریف شده است:
-  installation Installation? @relation(fields: [installationId], references: [id], onDelete: SetNull)
-
-  name       String
-  slug       String             @unique
-  legalName  String?
-  nationalId String?
-  phone      String?
-  email      String?
-  address    String?
-  logoUrl    String?
-  status     OrganizationStatus @default(ACTIVE)
-
-  ownerId String?
-  owner   User?   @relation("OrganizationOwner", fields: [ownerId], references: [id], onDelete: SetNull)
-
-  settings OrganizationSettings?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Core relations
-  memberships OrganizationMember[]
-  tickets     Ticket[]
-  auditLogs   AuditLog[]
-  roles       Role[]
-  branches    Branch[]
-  departments Department[]
-
-  // Accounting relations
+  id                 String                @id @default(cuid())
+  installationId     String?
+  name               String
+  slug               String                @unique
+  legalName          String?
+  nationalId         String?
+  registrationNumber String?
+  economicCode       String?
+  taxOffice          String?
+  phone              String?
+  email              String?
+  website            String?
+  address            String?
+  postalCode         String?
+  currency           String?               @default("IRR")
+  fiscalYearStart    String?               @default("01-01")
+  logoUrl            String?
+  status             OrganizationStatus    @default(ACTIVE)
+  ownerId            String?
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
   accountingInvoices AccountingInvoice[]
-
-  // Human Resources relations
-  employees     Employee[]
-  leaveRequests LeaveRequest[]
+  auditLogs          AuditLog[]
+  branches           Branch[]
+  departments        Department[]
+  employees          Employee[]
+  leaveRequests      LeaveRequest[]
+  memberships        OrganizationMember[]
+  settings           OrganizationSettings?
+  installation       Installation?         @relation(fields: [installationId], references: [id])
+  owner              User?                 @relation("OrganizationOwner", fields: [ownerId], references: [id])
+  roles              Role[]
+  tickets            Ticket[]
 
   @@index([installationId])
   @@index([status])
@@ -67,11 +47,9 @@ model OrganizationMember {
   invitedAt      DateTime?
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
-
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  roles MemberRole[]
+  roles          MemberRole[]
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([organizationId, userId])
   @@index([userId])
@@ -80,49 +58,57 @@ model OrganizationMember {
 }
 
 model Branch {
-  id             String   @id @default(cuid())
-  organizationId String
-  name           String
-  code           String   @unique
-  address        String?
-  phone          String?
-  isActive       Boolean  @default(true)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  departments  Department[]
-
-  // Accounting relations
+  id                 String              @id @default(cuid())
+  organizationId     String
+  name               String
+  code               String
+  address            String?
+  phone              String?
+  email              String?             // فیلد جدید
+  postalCode         String?             // فیلد جدید
+  isMain             Boolean             @default(false) // فیلد جدید
+  isActive           Boolean             @default(true)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
   accountingInvoices AccountingInvoice[]
+  organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  departments        Department[]
+  employees          Employee[]
 
-  // Human Resources relations
-  employees Employee[]
-
+  @@unique([organizationId, code])      // یکتایی کد در سطح هر سازمان
   @@index([organizationId])
   @@map("branches")
 }
 
 model Department {
-  id             String   @id @default(cuid())
-  organizationId String
-  branchId       String?
-  name           String
-  code           String   @unique
-  isActive       Boolean  @default(true)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  branch       Branch?      @relation(fields: [branchId], references: [id], onDelete: SetNull)
-
-  // Accounting relations
+  id                 String              @id @default(cuid())
+  organizationId     String
+  branchId           String?
+  name               String
+  code               String
+  isActive           Boolean             @default(true)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
   accountingInvoices AccountingInvoice[]
+  branch             Branch?             @relation(fields: [branchId], references: [id])
+  organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  employees          Employee[]
 
-  // Human Resources relations
-  employees Employee[]
-
+  @@unique([organizationId, code])      // یکتایی کد در سطح هر سازمان
   @@index([organizationId])
   @@index([branchId])
   @@map("departments")
+}
+
+enum OrganizationStatus {
+  ACTIVE
+  SUSPENDED
+  ARCHIVED
+}
+
+enum MembershipStatus {
+  ACTIVE
+  INVITED
+  SUSPENDED
+  REMOVED
 }

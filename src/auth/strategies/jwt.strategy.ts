@@ -1,22 +1,10 @@
 /**
  * File: backend/src/auth/strategies/jwt.strategy.ts
- *
- * هدف:
- * - اعتبارسنجی JWT
- * - پیدا کردن کاربر فعال
- * - پیدا کردن سازمان فعال کاربر
- * - قرار دادن organizationId در request.user
- *
- * نکته:
- * organizationId مستقیماً داخل مدل User نیست و از
- * OrganizationMember استخراج می‌شود.
  */
 
-import {
-  Injectable,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
+import { ConfigService } from '@nestjs/config';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 
 import { PrismaService } from '../../prisma/prisma.service';
@@ -38,11 +26,6 @@ export type AuthenticatedUser = {
   lastName: string;
   status: string;
   isSystemUser: boolean;
-
-  /**
-   * اگر کاربر هنوز عضو هیچ سازمانی نشده باشد،
-   * مقدار آن null خواهد بود.
-   */
   organizationId: string | null;
 };
 
@@ -51,17 +34,21 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(
     private readonly authService: AuthService,
     private readonly prisma: PrismaService,
+    private readonly configService: ConfigService,
   ) {
+    const jwtSecret =
+      configService.get<string>('JWT_SECRET') ||
+      process.env.JWT_SECRET ||
+      'erp-pro-secret';
+
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey: process.env.JWT_SECRET || 'erp-pro-secret',
+      secretOrKey: jwtSecret,
     });
   }
 
-  async validate(
-    payload: JwtPayload,
-  ): Promise<AuthenticatedUser> {
+  async validate(payload: JwtPayload): Promise<AuthenticatedUser> {
     if (!payload?.sub) {
       throw new UnauthorizedException('توکن احراز هویت نامعتبر است');
     }
@@ -69,38 +56,45 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     const user = await this.authService.validateUser(payload.sub);
 
     if (!user) {
-      throw new UnauthorizedException(
-        'کاربر یافت نشد یا حساب کاربری فعال نیست',
-      );
+      throw new UnauthorizedException('کاربر یافت نشد یا حساب کاربری فعال نیست');
     }
 
-    /**
-     * اگر در آینده organizationId داخل JWT قرار گرفت،
-     * ابتدا همان مقدار استفاده می‌شود.
-     *
-     * در وضعیت فعلی پروژه، organizationId داخل JWT نیست؛
-     * بنابراین از عضویت فعال کاربر استخراج می‌شود.
-     */
-    let organizationId: string | null =
-      payload.organizationId ?? null;
+    let organizationId: string | null = null;
+
+    if (payload.organizationId) {
+      const membership = await this.prisma.organizationMember.findFirst({
+        where: {
+          userId: user.id,
+          organizationId: payload.organizationId,
+          status: 'ACTIVE',
+          organization: {
+            status: 'ACTIVE',
+          },
+        },
+        select: {
+          organizationId: true,
+        },
+      });
+
+      organizationId = membership?.organizationId ?? null;
+    }
 
     if (!organizationId) {
-      const activeMembership =
-        await this.prisma.organizationMember.findFirst({
-          where: {
-            userId: user.id,
+      const activeMembership = await this.prisma.organizationMember.findFirst({
+        where: {
+          userId: user.id,
+          status: 'ACTIVE',
+          organization: {
             status: 'ACTIVE',
-            organization: {
-              status: 'ACTIVE',
-            },
           },
-          orderBy: {
-            createdAt: 'asc',
-          },
-          select: {
-            organizationId: true,
-          },
-        });
+        },
+        orderBy: {
+          createdAt: 'asc',
+        },
+        select: {
+          organizationId: true,
+        },
+      });
 
       organizationId = activeMembership?.organizationId ?? null;
     }

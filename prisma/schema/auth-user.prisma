@@ -1,56 +1,39 @@
-// File: backend/prisma/schema/auth-user.prisma
+model User {
+  id                        String                           @id @default(cuid())
+  username                  String                           @unique
+  email                     String?                          @unique
+  phone                     String?                          @unique
+  firstName                 String
+  lastName                  String
+  passwordHash              String
+  avatarUrl                 String?
+  status                    UserStatus                       @default(ACTIVE)
+  isSystemUser              Boolean                          @default(false)
+  lastLoginAt               DateTime?
+  createdAt                 DateTime                         @default(now())
+  updatedAt                 DateTime                         @updatedAt
+  receivedInvoicePayments   AccountingInvoicePayment[]       @relation("AccountingPaymentReceiver")
+  accountingStatusActions   AccountingInvoiceStatusHistory[] @relation("AccountingStatusActor")
+  createdAccountingInvoices AccountingInvoice[]              @relation("AccountingInvoiceCreator")
+  createdCodes              ActivationCode[]                 @relation("ActivationCodeCreator")
+  auditLogs                 AuditLog[]
+  employeeProfiles          Employee[]                       @relation("EmployeeUserAccount")
+  leaveRequestStatusActions LeaveRequestStatusHistory[]      @relation("LeaveRequestStatusActor")
+  reviewedLeaveRequests     LeaveRequest[]                   @relation("LeaveRequestReviewer")
+  memberships               OrganizationMember[]
+  ownedOrganizations        Organization[]                   @relation("OrganizationOwner")
+  ticketMessages            TicketMessage[]
+  assignedTickets           Ticket[]                         @relation("TicketAssignee")
+  createdTickets            Ticket[]                         @relation("TicketCreator")
+
+  @@index([status])
+  @@index([lastLoginAt])
+  @@map("users")
+}
 
 enum UserStatus {
   INVITED
   ACTIVE
   DISABLED
   ARCHIVED
-}
-
-model User {
-  id           String     @id @default(cuid())
-  username     String     @unique
-  email        String?    @unique
-  phone        String?    @unique
-  firstName    String
-  lastName     String
-  passwordHash String
-  avatarUrl    String?
-  status       UserStatus @default(ACTIVE)
-  isSystemUser Boolean    @default(false)
-  lastLoginAt  DateTime?
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
-
-  // Organization relations
-  ownedOrganizations Organization[]       @relation("OrganizationOwner")
-  memberships        OrganizationMember[]
-
-  // Ticket relations
-  createdTickets  Ticket[]        @relation("TicketCreator")
-  assignedTickets Ticket[]        @relation("TicketAssignee")
-  ticketMessages  TicketMessage[]
-
-  // System relations
-  auditLogs    AuditLog[]
-  createdCodes ActivationCode[] @relation("ActivationCodeCreator")
-
-  // Accounting relations
-  createdAccountingInvoices AccountingInvoice[]              @relation("AccountingInvoiceCreator")
-  accountingStatusActions   AccountingInvoiceStatusHistory[] @relation("AccountingStatusActor")
-  receivedInvoicePayments   AccountingInvoicePayment[]       @relation("AccountingPaymentReceiver")
-
-  // Human Resources relations
-  // پرونده‌های پرسنلی که در سازمان‌های مختلف ممکن است به این User متصل باشند.
-  employeeProfiles Employee[] @relation("EmployeeUserAccount")
-
-  // درخواست‌های مرخصی که این کاربر بررسی/تأیید/رد کرده است.
-  reviewedLeaveRequests LeaveRequest[] @relation("LeaveRequestReviewer")
-
-  // رکوردهای تاریخچهٔ تغییر وضعیت مرخصی که این کاربر انجام داده است.
-  leaveRequestStatusActions LeaveRequestStatusHistory[] @relation("LeaveRequestStatusActor")
-
-  @@index([status])
-  @@index([lastLoginAt])
-  @@map("users")
 }

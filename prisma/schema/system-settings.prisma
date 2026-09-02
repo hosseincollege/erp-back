@@ -1,35 +1,22 @@
-// File: backend/prisma/schema/system-settings.prisma
-// تنظیمات پیکربندی سامانه و ویژگی‌های فعال/غیرفعال (Feature Toggles) برای هر سازمان
-
 model OrganizationSettings {
-  id             String @id @default(cuid())
-  organizationId String @unique
-
-  // تنظیمات محلی و نمایش
-  timezone     String? @default("Asia/Tehran")
-  locale       String? @default("fa-IR")
-  currencyCode String? @default("IRR")
-  dateFormat   String? @default("jYYYY/jMM/jDD") // فرمت شمسی پیش‌فرض
-
-  // وضعیت‌های سیستمی (Bootstrap & Registration)
-  publicRegistrationEnabled Boolean @default(false) // طبق Plan: بعد از bootstrap باید false شود
-  bootstrapCompleted        Boolean @default(false) // نشان‌دهنده تکمیل تنظیمات اولیه سازمان
-
-  // Feature Toggles: فعال یا غیرفعال بودن ماژول‌ها برای این سازمان خاص
-  // این کار اجازه می‌دهد ماژول‌ها را به صورت Modular (طبق Plan) مدیریت کنیم
-  ticketingEnabled  Boolean @default(true)
-  inventoryEnabled  Boolean @default(false)
-  hrEnabled         Boolean @default(false)
-  crmEnabled        Boolean @default(false)
-  salesEnabled      Boolean @default(false)
-  accountingEnabled Boolean @default(false)
-  purchasingEnabled Boolean @default(false)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // رابطه با سازمان
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  id                        String       @id @default(cuid())
+  organizationId            String       @unique
+  timezone                  String?      @default("Asia/Tehran")
+  locale                    String?      @default("fa-IR")
+  currencyCode              String?      @default("IRR")
+  dateFormat                String?      @default("jYYYY/jMM/jDD")
+  publicRegistrationEnabled Boolean      @default(false)
+  bootstrapCompleted        Boolean      @default(false)
+  ticketingEnabled          Boolean      @default(true)
+  inventoryEnabled          Boolean      @default(false)
+  hrEnabled                 Boolean      @default(false)
+  crmEnabled                Boolean      @default(false)
+  salesEnabled              Boolean      @default(false)
+  accountingEnabled         Boolean      @default(false)
+  purchasingEnabled         Boolean      @default(false)
+  createdAt                 DateTime     @default(now())
+  updatedAt                 DateTime     @updatedAt
+  organization              Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@index([organizationId])
   @@map("organization_settings")

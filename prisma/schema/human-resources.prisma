@@ -1,13 +1,83 @@
-// File: backend/prisma/schema/human-resources.prisma
-//
-// ماژول منابع انسانی - نسخه اول:
-// - پرونده پرسنلی کارکنان
-// - درخواست مرخصی
-// - تاریخچه تغییر وضعیت درخواست مرخصی
-//
-// اصل Multi-tenancy:
-// تمام اطلاعات به organizationId وابسته‌اند و در بک‌اند
-// فقط با organizationId کاربر لاگین‌شده خوانده/ویرایش می‌شوند.
+model Employee {
+  id             String         @id @default(cuid())
+  organizationId String
+  userId         String?
+  branchId       String?
+  departmentId   String?
+  employeeCode   String
+  firstName      String
+  lastName       String
+  nationalId     String?
+  phone          String?
+  email          String?
+  jobTitle       String?
+  employmentType EmploymentType @default(FULL_TIME)
+  status         EmployeeStatus @default(ACTIVE)
+  hiredAt        DateTime
+  terminatedAt   DateTime?
+  birthDate      DateTime?
+  address        String?
+  emergencyPhone String?
+  notes          String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  branch         Branch?        @relation(fields: [branchId], references: [id])
+  department     Department?    @relation(fields: [departmentId], references: [id])
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User?          @relation("EmployeeUserAccount", fields: [userId], references: [id])
+  leaveRequests  LeaveRequest[]
+
+  @@unique([organizationId, employeeCode])
+  @@index([organizationId, status])
+  @@index([organizationId, departmentId])
+  @@index([organizationId, branchId])
+  @@index([userId])
+  @@index([nationalId])
+  @@map("employees")
+}
+
+model LeaveRequest {
+  id              String                      @id @default(cuid())
+  organizationId  String
+  employeeId      String
+  reviewedById    String?
+  leaveType       LeaveType
+  status          LeaveRequestStatus          @default(PENDING)
+  startAt         DateTime
+  endAt           DateTime
+  durationMinutes Int
+  reason          String?
+  reviewerNote    String?
+  reviewedAt      DateTime?
+  cancelledAt     DateTime?
+  createdAt       DateTime                    @default(now())
+  updatedAt       DateTime                    @updatedAt
+  statusHistory   LeaveRequestStatusHistory[]
+  employee        Employee                    @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  organization    Organization                @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  reviewedBy      User?                       @relation("LeaveRequestReviewer", fields: [reviewedById], references: [id])
+
+  @@index([organizationId, status])
+  @@index([organizationId, startAt])
+  @@index([employeeId, startAt])
+  @@index([reviewedById])
+  @@map("leave_requests")
+}
+
+model LeaveRequestStatusHistory {
+  id             String             @id @default(cuid())
+  leaveRequestId String
+  actedById      String
+  status         LeaveRequestStatus
+  note           String?
+  createdAt      DateTime           @default(now())
+  actedBy        User               @relation("LeaveRequestStatusActor", fields: [actedById], references: [id])
+  leaveRequest   LeaveRequest       @relation(fields: [leaveRequestId], references: [id], onDelete: Cascade)
+
+  @@index([leaveRequestId, createdAt])
+  @@index([actedById])
+  @@map("leave_request_status_history")
+}
 
 enum EmployeeStatus {
   ACTIVE
@@ -40,108 +110,4 @@ enum LeaveRequestStatus {
   APPROVED
   REJECTED
   CANCELLED
-}
-
-model Employee {
-  id             String  @id @default(cuid())
-  organizationId String
-  userId         String?
-  branchId       String?
-  departmentId   String?
-
-  // شناسه داخلی و یکتای پرسنل در هر سازمان
-  employeeCode String
-
-  // اطلاعات هویتی و کاری
-  firstName      String
-  lastName       String
-  nationalId     String?
-  phone          String?
-  email          String?
-  jobTitle       String?
-  employmentType EmploymentType @default(FULL_TIME)
-  status         EmployeeStatus @default(ACTIVE)
-  hiredAt        DateTime
-  terminatedAt   DateTime?
-  birthDate      DateTime?
-  address        String?
-  emergencyPhone String?
-  notes          String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // روابط اصلی
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  user         User?        @relation("EmployeeUserAccount", fields: [userId], references: [id], onDelete: SetNull)
-  branch       Branch?      @relation(fields: [branchId], references: [id], onDelete: SetNull)
-  department   Department?  @relation(fields: [departmentId], references: [id], onDelete: SetNull)
-
-  // درخواست‌های مرخصی کارمند
-  leaveRequests LeaveRequest[]
-
-  @@unique([organizationId, employeeCode])
-  @@index([organizationId, status])
-  @@index([organizationId, departmentId])
-  @@index([organizationId, branchId])
-  @@index([userId])
-  @@index([nationalId])
-  @@map("employees")
-}
-
-model LeaveRequest {
-  id             String  @id @default(cuid())
-  organizationId String
-  employeeId     String
-  reviewedById   String?
-
-  leaveType LeaveType
-  status    LeaveRequestStatus @default(PENDING)
-
-  // برای مرخصی روزانه یا ساعتی استفاده می‌شود.
-  // startAt و endAt زمان دقیق شروع و پایان را نگه می‌دارند.
-  startAt DateTime
-  endAt   DateTime
-
-  // مدت مرخصی به دقیقه، توسط بک‌اند محاسبه می‌شود.
-  // مثلاً یک روز کاری 8 ساعته = 480 دقیقه.
-  durationMinutes Int
-
-  reason       String?
-  reviewerNote String?
-  reviewedAt   DateTime?
-  cancelledAt  DateTime?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  employee     Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-
-  // مدیر/کاربری که درخواست را تأیید یا رد کرده است.
-  reviewedBy User? @relation("LeaveRequestReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
-
-  statusHistory LeaveRequestStatusHistory[]
-
-  @@index([organizationId, status])
-  @@index([organizationId, startAt])
-  @@index([employeeId, startAt])
-  @@index([reviewedById])
-  @@map("leave_requests")
-}
-
-model LeaveRequestStatusHistory {
-  id             String             @id @default(cuid())
-  leaveRequestId String
-  actedById      String
-  status         LeaveRequestStatus
-  note           String?
-  createdAt      DateTime           @default(now())
-
-  leaveRequest LeaveRequest @relation(fields: [leaveRequestId], references: [id], onDelete: Cascade)
-  actedBy      User         @relation("LeaveRequestStatusActor", fields: [actedById], references: [id], onDelete: Restrict)
-
-  @@index([leaveRequestId, createdAt])
-  @@index([actedById])
-  @@map("leave_request_status_history")
 }
