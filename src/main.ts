@@ -1,6 +1,6 @@
 /**
  * @file src/main.ts
- * @description ERP Pro backend bootstrap configuration: CORS, validation and server startup
+ * @description ERP Pro backend bootstrap configuration
  */
 
 import { Logger, ValidationPipe } from '@nestjs/common';
@@ -12,58 +12,42 @@ async function bootstrap() {
   const logger = new Logger('Bootstrap');
   const app = await NestFactory.create(AppModule);
 
-  const allowedOrigins = new Set([
+  const allowedOrigins = [
     'https://erp-front-opal.vercel.app',
     'http://localhost:3000',
     'http://localhost:3005',
     'http://127.0.0.1:3000',
     'http://127.0.0.1:3005',
-  ]);
+  ];
 
   app.enableCors({
     origin: (origin, callback) => {
-      // درخواست‌های بدون هدر Origin (مانند health checks و curl)
+      // درخواست‌های بدون هدر Origin (مانند curl و health check)
       if (!origin) {
-        callback(null, true);
-        return;
+        return callback(null, true);
       }
 
-      // دامنه‌های ثابت پروداکشن و لوکال
-      if (allowedOrigins.has(origin)) {
-        callback(null, true);
-        return;
-      }
-
-      // دامنه‌های پیش‌نمایش ورسل مربوط به فرانت‌اند
+      // بررسی دامنه‌های مجاز و تمام زیردامنه‌های vercel.app مربوط به پروژه
       if (
-        origin.startsWith('https://erp-front-') &&
+        allowedOrigins.includes(origin) ||
         origin.endsWith('.vercel.app')
       ) {
-        callback(null, true);
-        return;
+        return callback(null, true);
       }
 
-      // رد سایر دامنه‌ها بدون پرتاب خطا (توقف Preflight Error)
-      callback(null, false);
+      return callback(null, false);
     },
-
-    methods: [
-      'GET',
-      'HEAD',
-      'POST',
-      'PUT',
-      'PATCH',
-      'DELETE',
-      'OPTIONS',
-    ],
-
+    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
     allowedHeaders: [
-      'Accept',
+      'Origin',
+      'X-Requested-With',
       'Content-Type',
+      'Accept',
       'Authorization',
     ],
-
-    credentials: false,
+    credentials: true,
+    optionsSuccessStatus: 204,
+    preflightContinue: false,
     maxAge: 86400,
   });
 
@@ -79,7 +63,6 @@ async function bootstrap() {
   );
 
   const port = Number(process.env.PORT) || 3006;
-
   await app.listen(port);
 
   logger.log(`ERP Pro API is running on port ${port}`);
