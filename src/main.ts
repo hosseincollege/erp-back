@@ -13,21 +13,16 @@ async function bootstrap() {
 
   const app = await NestFactory.create(AppModule);
 
-  /**
-   * اجازه ارتباط فرانت Next.js با بک‌اند NestJS در محیط توسعه.
-   *
-   * نمونه originهای مجاز:
-   * - http://localhost:3005
-   * - http://localhost:3000
-   * - http://127.0.0.1:3005
-   */
+  const allowedOrigins = [
+    'https://erp-front-opal.vercel.app',
+    'http://localhost:3005',
+    'http://localhost:3000',
+    'http://127.0.0.1:3005',
+  ];
+
   app.enableCors({
     origin: (origin, callback) => {
-      const isDevelopmentRequest =
-        !origin ||
-        /^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin);
-
-      if (isDevelopmentRequest) {
+      if (!origin || allowedOrigins.includes(origin)) {
         callback(null, true);
         return;
       }
@@ -40,9 +35,6 @@ async function bootstrap() {
     maxAge: 86_400,
   });
 
-  /**
-   * اعتبارسنجی و پاک‌سازی سراسری داده‌های ورودی DTO.
-   */
   app.useGlobalPipes(
     new ValidationPipe({
       transform: true,
@@ -58,8 +50,7 @@ async function bootstrap() {
 
   await app.listen(port);
 
-  logger.log(`ERP Pro API is running on http://localhost:${port}`);
-  logger.log(`Tickets endpoint: http://localhost:${port}/tickets`);
+  logger.log(`ERP Pro API is running on port ${port}`);
 }
 
 void bootstrap();
