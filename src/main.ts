@@ -11,7 +11,6 @@ import express, { Express, Request, Response } from 'express';
 import { AppModule } from './app.module';
 
 const server: Express = express();
-
 let initializationPromise: Promise<void> | null = null;
 
 const allowedOrigins = [
@@ -22,13 +21,6 @@ const allowedOrigins = [
   'http://127.0.0.1:3005',
 ];
 
-function isOriginAllowed(origin: string): boolean {
-  return (
-    allowedOrigins.includes(origin) ||
-    origin.endsWith('.vercel.app')
-  );
-}
-
 async function createNestApp(expressInstance: Express): Promise<void> {
   const app = await NestFactory.create(
     AppModule,
@@ -37,23 +29,13 @@ async function createNestApp(expressInstance: Express): Promise<void> {
 
   app.enableCors({
     origin: (origin, callback) => {
-      // Requests such as server-to-server calls may not have an Origin header.
-      if (!origin) {
-        callback(null, true);
-        return;
+      // درخواست‌های بدون Origin یا منطبق با دامنه‌های مجاز و زیردامنه‌های ورسل
+      if (!origin || allowedOrigins.includes(origin) || origin.endsWith('.vercel.app')) {
+        return callback(null, true);
       }
-
-      callback(null, isOriginAllowed(origin));
+      return callback(null, false);
     },
-    methods: [
-      'GET',
-      'HEAD',
-      'POST',
-      'PUT',
-      'PATCH',
-      'DELETE',
-      'OPTIONS',
-    ],
+    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
     allowedHeaders: [
       'Origin',
       'X-Requested-With',
@@ -83,26 +65,21 @@ async function createNestApp(expressInstance: Express): Promise<void> {
 
 function initializeNestApp(): Promise<void> {
   if (!initializationPromise) {
-    initializationPromise = createNestApp(server).catch((error) => {
-      // Allow a later request to retry initialization.
+    initializationPromise = createNestApp(server).catch((err) => {
       initializationPromise = null;
-      throw error;
+      throw err;
     });
   }
-
   return initializationPromise;
 }
 
-// Vercel sets VERCEL=1. Outside Vercel, start a regular HTTP server.
+// اجرای سرور لوکال
 if (process.env.VERCEL !== '1') {
   void (async () => {
     const logger = new Logger('Bootstrap');
-
     try {
       await initializeNestApp();
-
       const port = Number(process.env.PORT) || 3006;
-
       server.listen(port, () => {
         logger.log(`ERP Pro API is running on port ${port}`);
       });
@@ -113,22 +90,18 @@ if (process.env.VERCEL !== '1') {
   })();
 }
 
-// Vercel Serverless Function handler
-export default async function handler(
-  req: Request,
-  res: Response,
-): Promise<void> {
+// هندلر سرورلس Vercel
+export default async function handler(req: Request, res: Response) {
   try {
     await initializeNestApp();
     server(req, res);
   } catch (error) {
     const logger = new Logger('VercelHandler');
-    logger.error('Failed to initialize ERP Pro API', error);
-
+    logger.error('Runtime error in Nest bootstrap', error);
     if (!res.headersSent) {
       res.status(500).json({
         statusCode: 500,
-        message: 'Internal server error',
+        message: 'Internal server initialization error',
       });
     }
   }
