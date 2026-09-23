@@ -1,0 +1,10 @@
+model Visit {
+  id        String   @id @default(cuid())
+  ipAddress String
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([ipAddress, createdAt])
+  @@index([createdAt])
+  @@map("visits")
+}

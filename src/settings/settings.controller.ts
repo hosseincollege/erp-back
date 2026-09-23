@@ -9,12 +9,15 @@ import {
   Param,
   Post,
   Put,
+  Req,
   UseGuards,
 } from '@nestjs/common';
+import type { Request } from 'express';
 
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { Public } from '../auth/decorators/public.decorator';
 
 import { SettingsService } from './settings.service';
 
@@ -35,6 +38,31 @@ import { SaveRoleDto } from './dto/save-role.dto';
 export class SettingsController {
   constructor(private readonly settingsService: SettingsService) {}
 
+  /**
+   * دریافت آمار بازدیدکنندگان عمومی (بدون نیاز به احراز هویت)
+   */
+  @Public()
+  @Get('public-stats')
+  async getPublicStats() {
+    return this.settingsService.getPublicStats();
+  }
+
+  /**
+   * ثبت یک بازدید جدید بر اساس IP (عمومی)
+   */
+  @Public()
+  @Post('public-track')
+  async trackPublicVisit(@Req() req: Request) {
+    const forwarded = req.headers['x-forwarded-for'];
+    const ip =
+      (typeof forwarded === 'string' ? forwarded.split(',')[0] : null) ||
+      req.socket.remoteAddress ||
+      '127.0.0.1';
+
+    const userAgent = (req.headers['user-agent'] as string) || undefined;
+    return this.settingsService.trackVisit(ip.trim(), userAgent);
+  }
+
   @Post('organization')
   async createOrganization(
     @Body() dto: CreateOrganizationDto,
@@ -48,7 +76,7 @@ export class SettingsController {
     if (!id || id.trim() === '') {
       throw new BadRequestException('شناسه سازمان نامعتبر است.');
     }
-    return this.settingsService.getOrganization(id);
+    return this.settingsService.getOrganization(id.trim());
   }
 
   @Put('organization/:id')
@@ -59,13 +87,9 @@ export class SettingsController {
     if (!id || id.trim() === '') {
       throw new BadRequestException('شناسه سازمان نامعتبر است.');
     }
-    return this.settingsService.updateOrganizationSettings(id, dto);
+    return this.settingsService.updateOrganizationSettings(id.trim(), dto);
   }
 
-  /**
-   * ایمپورت عمومی سازمان (شرکت + شعب + دپارتمان‌ها).
-   * شناسه سازمان از کاربر متصل استخراج شده و در صورت نبود سازمان فعال، خطای ۴۰۰ بازگردانده می‌شود.
-   */
   @Post('organization/import')
   async importOrganizationGeneral(
     @Body() dto: ImportOrganizationDto,
@@ -80,7 +104,7 @@ export class SettingsController {
       );
     }
 
-    return this.settingsService.importOrganizationData(organizationId, dto);
+    return this.settingsService.importOrganizationData(organizationId.trim(), dto);
   }
 
   @Get('roles/:organizationId')
@@ -89,7 +113,7 @@ export class SettingsController {
       throw new BadRequestException('شناسه سازمان نامعتبر است.');
     }
 
-    return this.settingsService.getRoles(organizationId);
+    return this.settingsService.getRoles(organizationId.trim());
   }
 
   @Put('roles/:organizationId')
@@ -101,7 +125,8 @@ export class SettingsController {
       throw new BadRequestException('شناسه سازمان نامعتبر است.');
     }
 
-    return this.settingsService.saveRoles(organizationId, roles);
+    const payload = Array.isArray(roles) ? roles : (roles as any)?.roles || [];
+    return this.settingsService.saveRoles(organizationId.trim(), payload);
   }
 
   @Get('branches/:organizationId')
@@ -110,7 +135,7 @@ export class SettingsController {
       throw new BadRequestException('شناسه سازمان نامعتبر است.');
     }
 
-    return this.settingsService.getBranches(organizationId);
+    return this.settingsService.getBranches(organizationId.trim());
   }
 
   @Post('branches')
@@ -130,7 +155,7 @@ export class SettingsController {
       throw new BadRequestException('شناسه شعبه نامعتبر است.');
     }
 
-    return this.settingsService.updateBranch(id, dto);
+    return this.settingsService.updateBranch(id.trim(), dto);
   }
 
   @Delete('branches/:id')
@@ -139,7 +164,7 @@ export class SettingsController {
       throw new BadRequestException('شناسه شعبه نامعتبر است.');
     }
 
-    return this.settingsService.deleteBranch(id);
+    return this.settingsService.deleteBranch(id.trim());
   }
 
   @Get('departments/:organizationId')
@@ -148,7 +173,7 @@ export class SettingsController {
       throw new BadRequestException('شناسه سازمان نامعتبر است.');
     }
 
-    return this.settingsService.getDepartments(organizationId);
+    return this.settingsService.getDepartments(organizationId.trim());
   }
 
   @Post('departments')
@@ -171,7 +196,7 @@ export class SettingsController {
       throw new BadRequestException('شناسه دپارتمان نامعتبر است.');
     }
 
-    return this.settingsService.updateDepartment(id, dto);
+    return this.settingsService.updateDepartment(id.trim(), dto);
   }
 
   @Delete('departments/:id')
@@ -180,7 +205,7 @@ export class SettingsController {
       throw new BadRequestException('شناسه دپارتمان نامعتبر است.');
     }
 
-    return this.settingsService.deleteDepartment(id);
+    return this.settingsService.deleteDepartment(id.trim());
   }
 
   @Get('users/:organizationId')
@@ -189,7 +214,32 @@ export class SettingsController {
       throw new BadRequestException('شناسه سازمان نامعتبر است.');
     }
 
-    return this.settingsService.getUsers(organizationId);
+    return this.settingsService.getUsers(organizationId.trim());
+  }
+
+  /**
+   * ذخیره و درون‌ریزی کاربران سازمان
+   */
+  @Put('users/:organizationId')
+  async saveUsers(
+    @Param('organizationId') organizationId: string,
+    @Body() usersPayload: any,
+  ) {
+    if (!organizationId || organizationId.trim() === '') {
+      throw new BadRequestException('شناسه سازمان نامعتبر است.');
+    }
+
+    // استخراج ایمن لیست کاربران چه به صورت آرایه مستقیم و چه آبجکت
+    let usersList: any[] = [];
+    if (Array.isArray(usersPayload)) {
+      usersList = usersPayload;
+    } else if (usersPayload && Array.isArray(usersPayload.users)) {
+      usersList = usersPayload.users;
+    } else if (usersPayload && Array.isArray(usersPayload.data)) {
+      usersList = usersPayload.data;
+    }
+
+    return this.settingsService.saveUsers(organizationId.trim(), usersList);
   }
 
   @Get('export/:organizationId')
@@ -198,7 +248,7 @@ export class SettingsController {
       throw new BadRequestException('شناسه سازمان نامعتبر است.');
     }
 
-    return this.settingsService.exportOrganizationData(organizationId);
+    return this.settingsService.exportOrganizationData(organizationId.trim());
   }
 
   @Post('import/:organizationId')
@@ -212,6 +262,6 @@ export class SettingsController {
       );
     }
 
-    return this.settingsService.importOrganizationData(organizationId, dto);
+    return this.settingsService.importOrganizationData(organizationId.trim(), dto);
   }
 }

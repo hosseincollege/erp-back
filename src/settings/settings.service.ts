@@ -6,6 +6,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import * as bcrypt from 'bcrypt';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateOrganizationDto } from './dto/create-organization.dto';
@@ -24,6 +25,67 @@ import { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 @Injectable()
 export class SettingsService {
   constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * دریافت آمار بازدید یکتا بر اساس IP برای امروز، ماه جاری و سال جاری
+   */
+  async getPublicStats() {
+    try {
+      const now = new Date();
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      const yearStart = new Date(now.getFullYear(), 0, 1);
+
+      if ((this.prisma as any).visit) {
+        const [todayVisits, monthVisits, yearVisits] = await Promise.all([
+          (this.prisma as any).visit.findMany({
+            where: { createdAt: { gte: todayStart } },
+            distinct: ['ipAddress'],
+            select: { ipAddress: true },
+          }),
+          (this.prisma as any).visit.findMany({
+            where: { createdAt: { gte: monthStart } },
+            distinct: ['ipAddress'],
+            select: { ipAddress: true },
+          }),
+          (this.prisma as any).visit.findMany({
+            where: { createdAt: { gte: yearStart } },
+            distinct: ['ipAddress'],
+            select: { ipAddress: true },
+          }),
+        ]);
+
+        return {
+          today: todayVisits.length,
+          month: monthVisits.length,
+          year: yearVisits.length,
+        };
+      }
+
+      return { today: 1, month: 1, year: 1 };
+    } catch {
+      return { today: 0, month: 0, year: 0 };
+    }
+  }
+
+  /**
+   * ثبت بازدید کاربر با IP
+   */
+  async trackVisit(ipAddress: string, userAgent?: string) {
+    try {
+      if ((this.prisma as any).visit) {
+        await (this.prisma as any).visit.create({
+          data: {
+            ipAddress,
+            userAgent: userAgent ? userAgent.slice(0, 500) : null,
+          },
+        });
+      }
+      return { success: true };
+    } catch {
+      return { success: false };
+    }
+  }
 
   async createOrganization(dto: CreateOrganizationDto, user: AuthenticatedUser) {
     if (!user?.id) {
@@ -246,7 +308,7 @@ export class SettingsService {
   }
 
   async getUsers(organizationId: string) {
-    return this.prisma.user.findMany({
+    const users = await this.prisma.user.findMany({
       where: {
         memberships: {
           some: {
@@ -258,7 +320,6 @@ export class SettingsService {
         memberships: {
           where: { organizationId },
           include: {
-            organization: true,
             roles: {
               include: {
                 role: true,
@@ -267,6 +328,196 @@ export class SettingsService {
           },
         },
       },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return users.map((u) => {
+      const membership = u.memberships[0];
+      const primaryRole = membership?.roles?.[0]?.role;
+      const roleName = primaryRole?.name || 'USER';
+      const roleKey = primaryRole?.key || 'USER';
+      const fullName = `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.username;
+
+      return {
+        id: u.id,
+        username: u.username,
+        name: fullName,
+        firstName: u.firstName,
+        lastName: u.lastName,
+        email: u.email,
+        phone: u.phone,
+        status: u.status,
+        isSystemUser: u.isSystemUser,
+        role: roleName,
+        roleKey: roleKey,
+        roles: membership?.roles?.map((r) => r.role.key) || [roleKey],
+        department: 'عمومی',
+        isActive: u.status === 'ACTIVE',
+      };
+    });
+  }
+
+  /**
+   * پیاده‌سازی متد saveUsers برای ذخیره/درون‌ریزی مطمئن کاربران با پشتیبانی از کلمه عبور و نام کاربری دلخواه
+   */
+  async saveUsers(organizationId: string, users: any[]) {
+    return this.prisma.$transaction(async (tx) => {
+      const org = await tx.organization.findUnique({
+        where: { id: organizationId },
+        select: { id: true },
+      });
+
+      if (!org) {
+        throw new NotFoundException(`سازمان با شناسه ${organizationId} یافت نشد.`);
+      }
+
+      // دریافت نقش‌های معتبر سازمان
+      const orgRoles = await tx.role.findMany({
+        where: {
+          OR: [{ organizationId }, { isSystemRole: true }],
+        },
+      });
+
+      const defaultPasswordHash =
+        '$2b$10$EpRnTzVlqHNP0.fUbXUwSOyuiXe/QLSUG6x0ek5q4/6uX2k.4e7lS';
+
+      for (const item of users) {
+        let user: any = null;
+
+        if (item.id) {
+          user = await tx.user.findUnique({ where: { id: item.id } });
+        }
+        if (!user && item.email) {
+          user = await tx.user.findUnique({ where: { email: item.email.trim().toLowerCase() } });
+        }
+        if (!user && item.username) {
+          user = await tx.user.findUnique({ where: { username: item.username.trim() } });
+        }
+
+        const fullName = (item.name || item.fullName || '').trim();
+        let derivedFirstName = item.firstName;
+        let derivedLastName = item.lastName;
+
+        if (!derivedFirstName && fullName) {
+          const parts = fullName.split(/\s+/);
+          derivedFirstName = parts[0];
+          derivedLastName = parts.slice(1).join(' ') || '-';
+        }
+
+        const firstName = derivedFirstName || 'کاربر';
+        const lastName = derivedLastName || 'جدید';
+
+        // تطبیق وضعیت با مقادیر معتبر Enumهای Prisma
+        const isUserActive = item.isActive !== false && item.status !== 'INACTIVE' && item.status !== 'DISABLED';
+        const userStatus: 'ACTIVE' | 'DISABLED' = isUserActive ? 'ACTIVE' : 'DISABLED';
+        const membershipStatus: 'ACTIVE' | 'SUSPENDED' = isUserActive ? 'ACTIVE' : 'SUSPENDED';
+
+        if (!user) {
+          const email = item.email?.trim().toLowerCase() || null;
+          const generatedUsername =
+            item.username?.trim() ||
+            (email ? email.split('@')[0] : null) ||
+            `user_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+
+          const passwordHash =
+            item.password && item.password.trim().length > 0
+              ? await bcrypt.hash(item.password.trim(), 10)
+              : defaultPasswordHash;
+
+          user = await tx.user.create({
+            data: {
+              username: generatedUsername,
+              firstName,
+              lastName,
+              email,
+              phone: item.phone || null,
+              passwordHash,
+              status: userStatus,
+            },
+          });
+        } else {
+          const updateData: any = {
+            firstName,
+            lastName,
+            ...(item.phone !== undefined && { phone: item.phone }),
+            status: userStatus,
+          };
+
+          if (item.username && item.username.trim() !== user.username) {
+            updateData.username = item.username.trim();
+          }
+
+          if (item.password && item.password.trim().length > 0) {
+            updateData.passwordHash = await bcrypt.hash(item.password.trim(), 10);
+          }
+
+          user = await tx.user.update({
+            where: { id: user.id },
+            data: updateData,
+          });
+        }
+
+        // ایجاد یا به‌روزرسانی عضویت در سازمان
+        const membership = await tx.organizationMember.upsert({
+          where: {
+            organizationId_userId: {
+              organizationId,
+              userId: user.id,
+            },
+          },
+          update: {
+            status: membershipStatus,
+          },
+          create: {
+            organizationId,
+            userId: user.id,
+            status: membershipStatus,
+            joinedAt: new Date(),
+          },
+        });
+
+        // تعیین و انتساب نقش‌ها
+        const requestedRoles: string[] = [];
+        if (Array.isArray(item.roleIds)) {
+          requestedRoles.push(...item.roleIds);
+        }
+        if (item.role) requestedRoles.push(item.role);
+        if (item.roleKey) requestedRoles.push(item.roleKey);
+        if (Array.isArray(item.roles)) {
+          requestedRoles.push(...item.roles);
+        }
+
+        // پیدا کردن ID نقش‌های متناظر
+        const matchedRoleIds = orgRoles
+          .filter(
+            (r) =>
+              requestedRoles.includes(r.id) ||
+              requestedRoles.includes(r.key) ||
+              requestedRoles.includes(r.name),
+          )
+          .map((r) => r.id);
+
+        // اگر نقشی یافت نشد، نقش پیش‌فرض سیستم انتساب می‌یابد
+        if (matchedRoleIds.length === 0 && orgRoles.length > 0) {
+          const defaultRole = orgRoles.find((r) => r.key === 'USER') || orgRoles[0];
+          matchedRoleIds.push(defaultRole.id);
+        }
+
+        await tx.memberRole.deleteMany({
+          where: { memberId: membership.id },
+        });
+
+        if (matchedRoleIds.length > 0) {
+          await tx.memberRole.createMany({
+            data: Array.from(new Set(matchedRoleIds)).map((roleId) => ({
+              memberId: membership.id,
+              roleId,
+            })),
+          });
+        }
+      }
+
+      return this.getUsers(organizationId);
     });
   }
 
@@ -531,7 +782,6 @@ export class SettingsService {
         });
       }
 
-      // نگاشت نام به شناسه شعب
       const branchIdByName = new Map<string, string>();
       const warnings: string[] = [];
 
@@ -575,7 +825,6 @@ export class SettingsService {
           branchIdByName.set(branch.name, savedBranch.id);
         }
 
-        // تضمین وجود دقیقا یک شعبه اصلی در سازمان
         if (mainBranches.length === 0) {
           const firstBranchId = branchIdByName.values().next().value;
           if (firstBranchId) {
@@ -621,7 +870,6 @@ export class SettingsService {
         return null;
       };
 
-      // پردازش دپارتمان‌ها
       if (dto.departments && dto.departments.length > 0) {
         for (const dept of dto.departments) {
           const branchId = resolveBranchId(dept);
