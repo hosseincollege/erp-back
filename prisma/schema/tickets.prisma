@@ -3,6 +3,7 @@ model Ticket {
   organizationId String?
   creatorId      String
   assigneeId     String?
+  projectId      String?          // اضافه شده برای ارتباط با پروژه
   ticketNumber   Int
   subject        String
   description    String
@@ -16,16 +17,19 @@ model Ticket {
   closedAt       DateTime?
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
+
   messages       TicketMessage[]
   assignee       User?            @relation("TicketAssignee", fields: [assigneeId], references: [id])
   creator        User             @relation("TicketCreator", fields: [creatorId], references: [id])
   organization   Organization?    @relation(fields: [organizationId], references: [id])
+  project        Project?         @relation(fields: [projectId], references: [id], onDelete: SetNull) // اضافه شده
 
   @@unique([organizationId, ticketNumber])
   @@index([organizationId, status])
   @@index([organizationId, priority])
   @@index([creatorId])
   @@index([assigneeId])
+  @@index([projectId])
   @@index([createdAt])
   @@map("tickets")
 }

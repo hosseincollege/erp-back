@@ -30,6 +30,7 @@ model Organization {
   settings           OrganizationSettings?
   installation       Installation?         @relation(fields: [installationId], references: [id])
   owner              User?                 @relation("OrganizationOwner", fields: [ownerId], references: [id])
+  projects           Project[]
   roles              Role[]
   tickets            Ticket[]
 

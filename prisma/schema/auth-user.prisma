@@ -25,6 +25,7 @@ model User {
   ticketMessages            TicketMessage[]
   assignedTickets           Ticket[]                         @relation("TicketAssignee")
   createdTickets            Ticket[]                         @relation("TicketCreator")
+  projectMemberships        ProjectMember[]                  // اضافه شده برای رفع خطای پریزما
 
   @@index([status])
   @@index([lastLoginAt])
