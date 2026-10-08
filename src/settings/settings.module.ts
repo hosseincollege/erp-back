@@ -5,11 +5,18 @@ import { Module } from '@nestjs/common';
 import { PrismaModule } from '../prisma/prisma.module';
 import { SettingsController } from './settings.controller';
 import { SettingsService } from './settings.service';
+import { OrganizationLogoStorageService } from './organization-logo-storage.service';
+import { DepartmentStructureController } from './department-structure.controller';
+import { DepartmentStructureService } from './department-structure.service';
 
 @Module({
   imports: [PrismaModule],
-  controllers: [SettingsController],
-  providers: [SettingsService],
+  controllers: [SettingsController, DepartmentStructureController],
+  providers: [
+    SettingsService,
+    OrganizationLogoStorageService,
+    DepartmentStructureService,
+  ],
   exports: [SettingsService],
 })
 export class SettingsModule {}

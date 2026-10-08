@@ -4,6 +4,7 @@ model Employee {
   userId         String?
   branchId       String?
   departmentId   String?
+  managerId      String?
   employeeCode   String
   firstName      String
   lastName       String
@@ -23,6 +24,11 @@ model Employee {
   updatedAt      DateTime       @updatedAt
   branch         Branch?        @relation(fields: [branchId], references: [id])
   department     Department?    @relation(fields: [departmentId], references: [id])
+  manager        Employee?      @relation("EmployeeReportingLine", fields: [managerId], references: [id], onDelete: SetNull)
+  directReports  Employee[]     @relation("EmployeeReportingLine")
+  managedDepartments Department[] @relation("DepartmentManager")
+  managedTeams   DepartmentTeam[] @relation("DepartmentTeamManager")
+  teamMemberships DepartmentTeamMember[]
   organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   user           User?          @relation("EmployeeUserAccount", fields: [userId], references: [id])
   leaveRequests  LeaveRequest[]
@@ -31,6 +37,7 @@ model Employee {
   @@index([organizationId, status])
   @@index([organizationId, departmentId])
   @@index([organizationId, branchId])
+  @@index([managerId])
   @@index([userId])
   @@index([nationalId])
   @@map("employees")

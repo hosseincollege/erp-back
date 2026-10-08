@@ -5,6 +5,7 @@ import {
   IsEnum,
   IsNotEmpty,
   IsOptional,
+  IsIn,
   IsString,
   MaxLength,
 } from 'class-validator';
@@ -83,7 +84,16 @@ export class UpdateOrganizationSettingsDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(2048)
   logoUrl?: string;
+
+  @IsOptional()
+  @IsIn(['LIGHT', 'DARK'])
+  logoTone?: 'LIGHT' | 'DARK';
+
+  @IsOptional()
+  @IsIn(['NONE', 'DARK', 'LIGHT'])
+  logoBackground?: 'NONE' | 'DARK' | 'LIGHT';
 
   @IsOptional()
   @IsEnum(OrganizationStatus)

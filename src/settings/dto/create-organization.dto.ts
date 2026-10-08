@@ -3,6 +3,7 @@
 
 import {
   IsEmail,
+  IsIn,
   IsNotEmpty,
   IsOptional,
   IsString,
@@ -46,4 +47,12 @@ export class CreateOrganizationDto {
   @IsOptional()
   @IsString()
   logoUrl?: string;
+
+  @IsOptional()
+  @IsIn(['LIGHT', 'DARK'])
+  logoTone?: 'LIGHT' | 'DARK';
+
+  @IsOptional()
+  @IsIn(['NONE', 'DARK', 'LIGHT'])
+  logoBackground?: 'NONE' | 'DARK' | 'LIGHT';
 }

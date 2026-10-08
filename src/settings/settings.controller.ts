@@ -10,14 +10,18 @@ import {
   Post,
   Put,
   Req,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import type { Request } from 'express';
 
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Public } from '../auth/decorators/public.decorator';
+import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 
 import { SettingsService } from './settings.service';
 
@@ -72,31 +76,80 @@ export class SettingsController {
   }
 
   @Get('organization/:id')
-  async getOrganization(@Param('id') id: string) {
+  async getOrganization(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
     if (!id || id.trim() === '') {
       throw new BadRequestException('شناسه سازمان نامعتبر است.');
     }
-    return this.settingsService.getOrganization(id.trim());
+    return this.settingsService.getOrganization(id.trim(), user);
+  }
+
+  @Get('organization/:id/access')
+  async getOrganizationAccess(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    if (!id || id.trim() === '') {
+      throw new BadRequestException('شناسه سازمان نامعتبر است.');
+    }
+    return this.settingsService.getOrganizationAccess(id.trim(), user);
+  }
+
+  @Get('organization/:id/branding')
+  async getOrganizationBranding(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    if (!id || id.trim() === '') {
+      throw new BadRequestException('شناسه سازمان نامعتبر است.');
+    }
+    return this.settingsService.getOrganizationBranding(id.trim(), user);
   }
 
   @Put('organization/:id')
   async updateOrganization(
     @Param('id') id: string,
     @Body() dto: UpdateOrganizationSettingsDto,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
     if (!id || id.trim() === '') {
       throw new BadRequestException('شناسه سازمان نامعتبر است.');
     }
-    return this.settingsService.updateOrganizationSettings(id.trim(), dto);
+    return this.settingsService.updateOrganizationSettings(
+      id.trim(),
+      dto,
+      user,
+    );
+  }
+
+  @Post('organization/:id/logo')
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024 } }),
+  )
+  async uploadOrganizationLogo(
+    @Param('id') id: string,
+    @UploadedFile()
+    file: { buffer: Buffer; mimetype: string; size: number } | undefined,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    if (!id || id.trim() === '') {
+      throw new BadRequestException('شناسه سازمان نامعتبر است.');
+    }
+    if (!file) {
+      throw new BadRequestException('فایل لوگو انتخاب نشده است.');
+    }
+
+    return this.settingsService.uploadOrganizationLogo(id.trim(), file, user);
   }
 
   @Post('organization/import')
   async importOrganizationGeneral(
     @Body() dto: ImportOrganizationDto,
-    @CurrentUser() user: any,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    const organizationId: string | undefined =
-      user?.organizationId ?? user?.organization?.id;
+    const organizationId = user.organizationId ?? undefined;
 
     if (!organizationId || organizationId.trim() === '') {
       throw new BadRequestException(
@@ -104,7 +157,11 @@ export class SettingsController {
       );
     }
 
-    return this.settingsService.importOrganizationData(organizationId.trim(), dto);
+    return this.settingsService.importOrganizationData(
+      organizationId.trim(),
+      dto,
+      user,
+    );
   }
 
   @Get('roles/:organizationId')
@@ -243,18 +300,25 @@ export class SettingsController {
   }
 
   @Get('export/:organizationId')
-  async exportOrganization(@Param('organizationId') organizationId: string) {
+  async exportOrganization(
+    @Param('organizationId') organizationId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
     if (!organizationId || organizationId.trim() === '') {
       throw new BadRequestException('شناسه سازمان نامعتبر است.');
     }
 
-    return this.settingsService.exportOrganizationData(organizationId.trim());
+    return this.settingsService.exportOrganizationData(
+      organizationId.trim(),
+      user,
+    );
   }
 
   @Post('import/:organizationId')
   async importOrganization(
     @Param('organizationId') organizationId: string,
     @Body() dto: ImportOrganizationDto,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
     if (!organizationId || organizationId.trim() === '') {
       throw new BadRequestException(
@@ -262,6 +326,10 @@ export class SettingsController {
       );
     }
 
-    return this.settingsService.importOrganizationData(organizationId.trim(), dto);
+    return this.settingsService.importOrganizationData(
+      organizationId.trim(),
+      dto,
+      user,
+    );
   }
 }

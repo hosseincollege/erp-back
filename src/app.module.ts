@@ -15,6 +15,7 @@ import { SettingsModule } from './settings/settings.module';
 import { SetupModule } from './setup/setup.module';
 import { TicketsModule } from './tickets/tickets.module';
 import { ProjectsModule } from './projects/projects.module'; // ماژول پروژه اضافه شد
+import { CrmModule } from './crm/crm.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { ProjectsModule } from './projects/projects.module'; // ماژول پر�
     HumanResourcesModule,
     InventoryModule,
     SettingsModule,
+    CrmModule,
   ],
   controllers: [AppController],
   providers: [AppService],

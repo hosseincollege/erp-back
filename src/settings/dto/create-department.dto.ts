@@ -28,6 +28,10 @@ export class CreateDepartmentDto {
   branchId?: string;
 
   @IsOptional()
+  @IsString()
+  managerEmployeeId?: string;
+
+  @IsOptional()
   @IsBoolean()
   isActive?: boolean;
 }

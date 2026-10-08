@@ -41,6 +41,10 @@ export class UpdateEmployeeDto {
 
   @IsOptional()
   @IsString()
+  managerId?: string | null;
+
+  @IsOptional()
+  @IsString()
   @MaxLength(100)
   firstName?: string;
 

@@ -1,8 +1,11 @@
 // Path: backend/src/settings/settings.service.ts
 
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
+  HttpException,
+  InternalServerErrorException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -21,10 +24,14 @@ import {
 } from './dto/import-organization.dto';
 import { SaveRoleDto } from './dto/save-role.dto';
 import { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
+import { OrganizationLogoStorageService } from './organization-logo-storage.service';
 
 @Injectable()
 export class SettingsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly logoStorage: OrganizationLogoStorageService,
+  ) {}
 
   /**
    * دریافت آمار بازدید یکتا بر اساس IP برای امروز، ماه جاری و سال جاری
@@ -136,6 +143,8 @@ export class SettingsService {
           email: dto.email,
           address: dto.address,
           logoUrl: dto.logoUrl,
+          ...(dto.logoTone && { logoTone: dto.logoTone }),
+          ...(dto.logoBackground && { logoBackground: dto.logoBackground }),
           ownerId: user.id,
           status: 'ACTIVE',
         },
@@ -158,8 +167,112 @@ export class SettingsService {
     });
   }
 
-  async getOrganization(id: string) {
+  async getOrganization(id: string, user: AuthenticatedUser) {
+    const access = await this.getOrganizationAccess(id, user);
+    if (!access.canView) {
+      throw new ForbiddenException('مجوز مشاهده اطلاعات این سازمان را ندارید.');
+    }
     return this.getOrganizationSettings(id);
+  }
+
+  async getOrganizationAccess(id: string, user: AuthenticatedUser) {
+    const membership = await this.prisma.organizationMember.findFirst({
+      where: {
+        organizationId: id,
+        userId: user.id,
+        status: 'ACTIVE',
+        organization: { status: 'ACTIVE' },
+      },
+      select: {
+        organization: { select: { ownerId: true } },
+        roles: {
+          select: {
+            role: {
+              select: {
+                permissions: {
+                  select: { permission: { select: { key: true } } },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!membership) {
+      return { canView: false, canEdit: false };
+    }
+
+    const isOwner = membership.organization.ownerId === user.id;
+    const permissions = new Set(
+      membership.roles.flatMap((memberRole) =>
+        memberRole.role.permissions.map((item) => item.permission.key),
+      ),
+    );
+    const canEdit = isOwner || permissions.has('settings.write');
+    const canView = canEdit || permissions.has('settings.read');
+
+    return { canView, canEdit };
+  }
+
+  async getOrganizationBranding(id: string, user: AuthenticatedUser) {
+    const membership = await this.prisma.organizationMember.findFirst({
+      where: {
+        organizationId: id,
+        userId: user.id,
+        status: 'ACTIVE',
+        organization: { status: 'ACTIVE' },
+      },
+      select: {
+        organization: { select: { name: true, logoUrl: true, logoTone: true, logoBackground: true } },
+      },
+    });
+
+    if (!membership) {
+      throw new ForbiddenException('کاربر عضو این سازمان فعال نیست.');
+    }
+
+    return membership.organization;
+  }
+
+  async uploadOrganizationLogo(
+    id: string,
+    file: { buffer: Buffer; mimetype: string; size: number },
+    user: AuthenticatedUser,
+  ) {
+    const access = await this.getOrganizationAccess(id, user);
+    if (!access.canEdit) {
+      throw new ForbiddenException('مجوز ویرایش اطلاعات این سازمان را ندارید.');
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      throw new BadRequestException('حجم لوگو نباید بیشتر از ۵ مگابایت باشد.');
+    }
+
+    const organization = await this.getOrganizationSettings(id);
+    let logoUrl: string;
+
+    try {
+      logoUrl = await this.logoStorage.save(file.buffer, file.mimetype);
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new InternalServerErrorException('ذخیره لوگو ناموفق بود.');
+    }
+
+    try {
+      await this.prisma.organization.update({
+        where: { id },
+        data: { logoUrl },
+      });
+    } catch (error) {
+      await this.logoStorage.remove(logoUrl);
+      throw error;
+    }
+
+    await this.logoStorage.remove(organization.logoUrl).catch(() => undefined);
+    return { logoUrl };
   }
 
   async getOrganizationSettings(id: string) {
@@ -524,10 +637,20 @@ export class SettingsService {
   async updateOrganizationSettings(
     id: string,
     dto: UpdateOrganizationSettingsDto,
+    user: AuthenticatedUser,
   ) {
-    await this.getOrganizationSettings(id);
+    const access = await this.getOrganizationAccess(id, user);
+    if (!access.canEdit) {
+      throw new ForbiddenException('مجوز ویرایش اطلاعات این سازمان را ندارید.');
+    }
+    const organization = await this.getOrganizationSettings(id);
+    if (dto.status !== undefined && organization.ownerId !== user.id) {
+      throw new ForbiddenException(
+        'فقط مالک سازمان می‌تواند وضعیت سازمان را تغییر دهد.',
+      );
+    }
 
-    return this.prisma.organization.update({
+    const updatedOrganization = await this.prisma.organization.update({
       where: { id },
       data: {
         ...(dto.name !== undefined && { name: dto.name }),
@@ -544,9 +667,20 @@ export class SettingsService {
         ...(dto.currency !== undefined && { currency: dto.currency }),
         ...(dto.fiscalYearStart !== undefined && { fiscalYearStart: dto.fiscalYearStart }),
         ...(dto.logoUrl !== undefined && { logoUrl: dto.logoUrl }),
+        ...(dto.logoTone !== undefined && { logoTone: dto.logoTone }),
+        ...(dto.logoBackground !== undefined && { logoBackground: dto.logoBackground }),
         ...(dto.status !== undefined && { status: dto.status }),
       },
     });
+
+    if (
+      dto.logoUrl !== undefined &&
+      dto.logoUrl !== organization.logoUrl
+    ) {
+      await this.logoStorage.remove(organization.logoUrl).catch(() => undefined);
+    }
+
+    return updatedOrganization;
   }
 
   async getBranches(organizationId: string) {
@@ -749,14 +883,26 @@ export class SettingsService {
     return { message: 'دپارتمان با موفقیت حذف شد.', id };
   }
 
-  async exportOrganizationData(organizationId: string) {
+  async exportOrganizationData(
+    organizationId: string,
+    user: AuthenticatedUser,
+  ) {
+    const access = await this.getOrganizationAccess(organizationId, user);
+    if (!access.canView) {
+      throw new ForbiddenException('مجوز دریافت اطلاعات این سازمان را ندارید.');
+    }
     return this.getOrganizationSettings(organizationId);
   }
 
   async importOrganizationData(
     organizationId: string,
     dto: ImportOrganizationDto,
+    user: AuthenticatedUser,
   ) {
+    const access = await this.getOrganizationAccess(organizationId, user);
+    if (!access.canEdit) {
+      throw new ForbiddenException('مجوز ویرایش اطلاعات این سازمان را ندارید.');
+    }
     await this.getOrganizationSettings(organizationId);
 
     return this.prisma.$transaction(async (tx) => {
@@ -778,6 +924,8 @@ export class SettingsService {
             ...(dto.organization.currency !== undefined && { currency: dto.organization.currency }),
             ...(dto.organization.fiscalYearStart !== undefined && { fiscalYearStart: dto.organization.fiscalYearStart }),
             ...(dto.organization.logoUrl !== undefined && { logoUrl: dto.organization.logoUrl }),
+            ...(dto.organization.logoTone !== undefined && { logoTone: dto.organization.logoTone }),
+            ...(dto.organization.logoBackground !== undefined && { logoBackground: dto.organization.logoBackground }),
           },
         });
       }

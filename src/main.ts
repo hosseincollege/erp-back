@@ -7,10 +7,12 @@ import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { ExpressAdapter } from '@nestjs/platform-express';
 import express, { Express, Request, Response } from 'express';
+import { resolve } from 'node:path';
 
 import { AppModule } from './app.module';
 
 const server: Express = express();
+server.use('/uploads', express.static(resolve(process.cwd(), 'uploads')));
 let initializationPromise: Promise<void> | null = null;
 
 const allowedOrigins = [

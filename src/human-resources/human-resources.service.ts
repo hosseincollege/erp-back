@@ -3,7 +3,7 @@
  * backend/src/human-resources/human-resources.service.ts
  *
  * منطق تجاری ماژول منابع انسانی:
- * - مدیریت کارکنان
+ * - مدیریت کارکنان (با قابلیت ایجاد هم‌زمان حساب کاربری، عضویت سازمانی و انتساب نقش‌ها در تراکنش دیتابیس)
  * - مدیریت درخواست‌های مرخصی
  * - ثبت تاریخچه تغییر وضعیت مرخصی
  * - اعمال کامل محدوده سازمان جاری
@@ -15,6 +15,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import * as bcrypt from 'bcrypt';
 
 import {
   EmployeeStatus,
@@ -22,6 +23,7 @@ import {
   LeaveRequestStatus,
   LeaveType,
   Prisma,
+  UserStatus,
 } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
@@ -52,9 +54,7 @@ type LeaveRequestFilters = {
 
 @Injectable()
 export class HumanResourcesService {
-  constructor(
-    private readonly prisma: PrismaService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   /**
    * اطمینان از وجود سازمان فعال برای کاربر جاری
@@ -129,7 +129,7 @@ export class HumanResourcesService {
     ) {
       if (error.code === 'P2002') {
         throw new ConflictException(
-          'رکوردی با یکی از مقادیر یکتا از قبل وجود دارد.',
+          'رکوردی با یکی از مقادیر یکتا (مانند کد پرسنلی یا نام کاربری) از قبل وجود دارد.',
         );
       }
 
@@ -158,6 +158,7 @@ export class HumanResourcesService {
       userId?: string | null;
       branchId?: string | null;
       departmentId?: string | null;
+      managerId?: string | null;
     },
   ): Promise<void> {
     if (dto.userId) {
@@ -212,6 +213,24 @@ export class HumanResourcesService {
       if (!department) {
         throw new BadRequestException(
           'دپارتمان انتخاب‌شده متعلق به سازمان جاری نیست.',
+        );
+      }
+    }
+
+    if (dto.managerId) {
+      const manager = await this.prisma.employee.findFirst({
+        where: {
+          id: dto.managerId,
+          organizationId,
+        },
+        select: {
+          id: true,
+        },
+      });
+
+      if (!manager) {
+        throw new BadRequestException(
+          'مدیر مستقیم انتخاب‌شده متعلق به سازمان جاری نیست.',
         );
       }
     }
@@ -446,7 +465,7 @@ export class HumanResourcesService {
   }
 
   /**
-   * ایجاد کارمند
+   * ایجاد کارمند (با پشتیبانی از ساخت هم‌زمان حساب کاربری)
    */
   async createEmployee(
     user: CurrentAuthUser,
@@ -454,10 +473,21 @@ export class HumanResourcesService {
   ) {
     const organizationId = this.getOrganizationId(user);
 
-    await this.validateEmployeeRelations(
-      organizationId,
-      dto,
-    );
+    // اعتبارسنجی اولیه شعبه، دپارتمان و کاربر در صورت ارسال
+    if (!dto.createAccount && dto.userId) {
+      await this.validateEmployeeRelations(organizationId, {
+        userId: dto.userId,
+        branchId: dto.branchId,
+        departmentId: dto.departmentId,
+        managerId: dto.managerId,
+      });
+    } else {
+      await this.validateEmployeeRelations(organizationId, {
+        branchId: dto.branchId,
+        departmentId: dto.departmentId,
+        managerId: dto.managerId,
+      });
+    }
 
     const hiredAt = this.parseDate(
       dto.hiredAt,
@@ -471,36 +501,125 @@ export class HumanResourcesService {
     }
 
     try {
-      return await this.prisma.employee.create({
-        data: {
-          organizationId,
-          employeeCode: dto.employeeCode,
-          userId: dto.userId ?? null,
-          branchId: dto.branchId ?? null,
-          departmentId: dto.departmentId ?? null,
-          firstName: dto.firstName,
-          lastName: dto.lastName,
-          nationalId: dto.nationalId ?? null,
-          phone: dto.phone ?? null,
-          email: dto.email ?? null,
-          jobTitle: dto.jobTitle ?? null,
-          employmentType:
-            dto.employmentType ?? EmploymentType.FULL_TIME,
-          status: dto.status ?? EmployeeStatus.ACTIVE,
-          hiredAt,
-          birthDate: this.parseDate(
-            dto.birthDate,
-            'birthDate',
-          ),
-          address: dto.address ?? null,
-          emergencyPhone: dto.emergencyPhone ?? null,
-          notes: dto.notes ?? null,
-        },
-        include: {
-          user: true,
-          branch: true,
-          department: true,
-        },
+      return await this.prisma.$transaction(async (tx) => {
+        let assignedUserId: string | null = dto.userId ?? null;
+
+        // در صورت درخواست ایجاد حساب کاربری هم‌زمان
+        if (dto.createAccount) {
+          const accountUsername = dto.username?.trim();
+          if (!accountUsername) {
+            throw new BadRequestException('برای ایجاد حساب، نام کاربری الزامی است.');
+          }
+
+          if (!dto.password || dto.password.length < 6) {
+            throw new BadRequestException('کلمه عبور باید حداقل ۶ کاراکتر باشد.');
+          }
+
+          // بررسی تکراری نبودن نام کاربری یا ایمیل/موبایل
+          const conflictConditions: Prisma.UserWhereInput[] = [
+            { username: accountUsername },
+          ];
+
+          if (dto.email?.trim()) {
+            conflictConditions.push({ email: dto.email.trim() });
+          }
+
+          if (dto.phone?.trim()) {
+            conflictConditions.push({ phone: dto.phone.trim() });
+          }
+
+          const existingUser = await tx.user.findFirst({
+            where: {
+              OR: conflictConditions,
+            },
+          });
+
+          if (existingUser) {
+            throw new ConflictException(
+              'نام کاربری، ایمیل یا شماره موبایل واردشده قبلاً در سیستم ثبت شده است.',
+            );
+          }
+
+          const passwordHash = await bcrypt.hash(dto.password, 12);
+
+          // ساخت کاربر
+          const newUser = await tx.user.create({
+            data: {
+              username: accountUsername,
+              firstName: dto.firstName,
+              lastName: dto.lastName,
+              email: dto.email?.trim() || null,
+              phone: dto.phone?.trim() || null,
+              passwordHash,
+              status: UserStatus.ACTIVE,
+            },
+          });
+
+          assignedUserId = newUser.id;
+
+          // عضویت در سازمان جاری
+          const membership = await tx.organizationMember.create({
+            data: {
+              organizationId,
+              userId: newUser.id,
+              status: 'ACTIVE',
+            },
+          });
+
+          // انتساب نقش‌ها در صورت ارسال
+          if (dto.roleIds && dto.roleIds.length > 0) {
+            const validRoles = await tx.role.findMany({
+              where: {
+                id: { in: dto.roleIds },
+                OR: [
+                  { organizationId },
+                  { scope: 'SYSTEM' },
+                ],
+              },
+              select: { id: true },
+            });
+
+            if (validRoles.length > 0) {
+              await tx.memberRole.createMany({
+                data: validRoles.map((role) => ({
+                  memberId: membership.id,
+                  roleId: role.id,
+                })),
+                skipDuplicates: true,
+              });
+            }
+          }
+        }
+
+        // ایجاد رکورد نهایی کارمند
+        return tx.employee.create({
+          data: {
+            organizationId,
+            employeeCode: dto.employeeCode,
+            userId: assignedUserId,
+            branchId: dto.branchId ?? null,
+            departmentId: dto.departmentId ?? null,
+            managerId: dto.managerId ?? null,
+            firstName: dto.firstName,
+            lastName: dto.lastName,
+            nationalId: dto.nationalId ?? null,
+            phone: dto.phone ?? null,
+            email: dto.email ?? null,
+            jobTitle: dto.jobTitle ?? null,
+            employmentType: dto.employmentType ?? EmploymentType.FULL_TIME,
+            status: dto.status ?? EmployeeStatus.ACTIVE,
+            hiredAt,
+            birthDate: this.parseDate(dto.birthDate, 'birthDate'),
+            address: dto.address ?? null,
+            emergencyPhone: dto.emergencyPhone ?? null,
+            notes: dto.notes ?? null,
+          },
+          include: {
+            user: true,
+            branch: true,
+            department: true,
+          },
+        });
       });
     } catch (error) {
       this.handlePrismaError(error);
@@ -534,6 +653,10 @@ export class HumanResourcesService {
       );
     }
 
+    if (dto.managerId === employeeId) {
+      throw new BadRequestException('کارمند نمی‌تواند مدیر مستقیم خودش باشد.');
+    }
+
     await this.validateEmployeeRelations(
       organizationId,
       dto,
@@ -555,6 +678,10 @@ export class HumanResourcesService {
 
     if (dto.departmentId !== undefined) {
       data.departmentId = dto.departmentId;
+    }
+
+    if (dto.managerId !== undefined) {
+      data.managerId = dto.managerId;
     }
 
     if (dto.firstName !== undefined) {

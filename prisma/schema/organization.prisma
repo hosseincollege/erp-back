@@ -16,6 +16,8 @@ model Organization {
   currency           String?               @default("IRR")
   fiscalYearStart    String?               @default("01-01")
   logoUrl            String?
+  logoTone           String                @default("DARK")
+  logoBackground     String                @default("NONE")
   status             OrganizationStatus    @default(ACTIVE)
   ownerId            String?
   createdAt          DateTime              @default(now())
@@ -24,6 +26,7 @@ model Organization {
   auditLogs          AuditLog[]
   branches           Branch[]
   departments        Department[]
+  departmentTeams    DepartmentTeam[]
   employees          Employee[]
   leaveRequests      LeaveRequest[]
   memberships        OrganizationMember[]
@@ -94,10 +97,14 @@ model Department {
   branch             Branch?             @relation(fields: [branchId], references: [id])
   organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   employees          Employee[]
+  managerEmployeeId  String?
+  manager            Employee?           @relation("DepartmentManager", fields: [managerEmployeeId], references: [id], onDelete: SetNull)
+  teams              DepartmentTeam[]
 
   @@unique([organizationId, code])      // یکتایی کد در سطح هر سازمان
   @@index([organizationId])
   @@index([branchId])
+  @@index([managerEmployeeId])
   @@map("departments")
 }
 

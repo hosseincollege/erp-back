@@ -26,6 +26,10 @@ export class UpdateDepartmentDto {
   branchId?: string;
 
   @IsOptional()
+  @IsString()
+  managerEmployeeId?: string | null;
+
+  @IsOptional()
   @IsBoolean()
   isActive?: boolean;
 }
