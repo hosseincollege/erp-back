@@ -23,6 +23,7 @@ model User {
   createdPayrollRecords     PayrollRecord[]                  @relation("PayrollCreator")
   approvedPayrollRecords    PayrollRecord[]                  @relation("PayrollApprover")
   reviewedLeaveRequests     LeaveRequest[]                   @relation("LeaveRequestReviewer")
+  reviewedBusinessTrips     BusinessTripRequest[]            @relation("BusinessTripReviewer")
   memberships               OrganizationMember[]
   ownedOrganizations        Organization[]                   @relation("OrganizationOwner")
   ticketMessages            TicketMessage[]
@@ -45,6 +46,7 @@ model UserPreference {
   accentColor   String   @default("blue")
   lightContrast String   @default("balanced")
   darkContrast  String   @default("balanced")
+  calendar      String   @default("persian")
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)

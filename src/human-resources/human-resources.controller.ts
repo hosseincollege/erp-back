@@ -26,9 +26,10 @@ import {
   LeaveType,
 } from '@prisma/client';
 
-import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { CurrentUser } from '../core/auth/decorators/current-user.decorator';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { CreateLeaveRequestDto } from './dto/create-leave-request.dto';
+import { CreateBusinessTripRequestDto } from './dto/create-business-trip-request.dto';
 import { UpdateEmployeeDto } from './dto/update-employee.dto';
 import { UpdateLeaveRequestStatusDto } from './dto/update-leave-request-status.dto';
 import { SaveAttendanceDto } from './dto/save-attendance.dto';
@@ -195,5 +196,20 @@ export class HumanResourcesController {
       leaveRequestId,
       dto,
     );
+  }
+
+  @Get('business-trip-requests')
+  getBusinessTripRequests(@CurrentUser() user: CurrentAuthUser, @Query('status') status?: LeaveRequestStatus) {
+    return this.humanResourcesService.getBusinessTripRequests(user, status);
+  }
+
+  @Post('business-trip-requests')
+  createBusinessTripRequest(@CurrentUser() user: CurrentAuthUser, @Body() dto: CreateBusinessTripRequestDto) {
+    return this.humanResourcesService.createBusinessTripRequest(user, dto);
+  }
+
+  @Patch('business-trip-requests/:id/status')
+  updateBusinessTripRequestStatus(@CurrentUser() user: CurrentAuthUser, @Param('id') id: string, @Body() dto: UpdateLeaveRequestStatusDto) {
+    return this.humanResourcesService.updateBusinessTripRequestStatus(user, id, dto);
   }
 }

@@ -24,7 +24,7 @@ import {
   AccountingPriority,
 } from '@prisma/client';
 
-import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { CurrentUser } from '../core/auth/decorators/current-user.decorator';
 import { AccountingService } from './accounting.service';
 import { CreateInvoiceDto } from './dto/create-invoice.dto';
 import { RegisterInvoicePaymentDto } from './dto/register-invoice-payment.dto';
@@ -40,6 +40,11 @@ export class AccountingController {
   constructor(
     private readonly accountingService: AccountingService,
   ) {}
+
+  @Get('access')
+  getAccess(@CurrentUser() user: CurrentAuthUser) {
+    return this.accountingService.getAccess(user);
+  }
 
   /**
    * دریافت خلاصه وضعیت حسابداری سازمان جاری

@@ -15,6 +15,7 @@
 
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -98,7 +99,45 @@ const invoiceInclude = {
 export class AccountingService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private async getMembershipAccess(user: CurrentAuthUser) {
+    const membership = await this.prisma.organizationMember.findFirst({
+      where: {
+        organizationId: user.organizationId,
+        userId: user.id,
+        status: 'ACTIVE',
+        organization: { status: 'ACTIVE' },
+      },
+      select: {
+        organization: { select: { ownerId: true } },
+        roles: { select: { role: {
+          select: { key: true, permissions: { select: { permission: { select: { key: true } } } } },
+        } } },
+      },
+    });
+    if (!membership) throw new ForbiddenException('عضویت فعال سازمان برای این عملیات لازم است.');
+    const keys = new Set(membership.roles.flatMap(({ role }) => role.permissions.map(({ permission }) => permission.key)));
+    const isAdministrator = membership.organization.ownerId === user.id || membership.roles.some(({ role }) => ['ADMIN', 'SUPER_ADMIN'].includes(role.key.toUpperCase()));
+    const canManage = isAdministrator || keys.has('accounting.write');
+    return { isAdministrator, canManage, canView: canManage || keys.has('accounting.read') };
+  }
+
+  async getAccess(user: CurrentAuthUser) {
+    const access = await this.getMembershipAccess(user);
+    return { canView: access.canView, canManage: access.canManage };
+  }
+
+  private async requireView(user: CurrentAuthUser) {
+    const access = await this.getMembershipAccess(user);
+    if (!access.canView) throw new ForbiddenException('مجوز مشاهده حسابداری را ندارید.');
+  }
+
+  private async requireManage(user: CurrentAuthUser) {
+    const access = await this.getMembershipAccess(user);
+    if (!access.canManage) throw new ForbiddenException('مجوز مدیریت حسابداری را ندارید.');
+  }
+
   async getDashboard(user: CurrentAuthUser) {
+    await this.requireView(user);
     const now = new Date();
 
     const [
@@ -185,6 +224,7 @@ export class AccountingService {
     user: CurrentAuthUser,
     query: InvoiceListQuery,
   ) {
+    await this.requireView(user);
     const where: Prisma.AccountingInvoiceWhereInput = {
       organizationId: user.organizationId,
     };
@@ -238,6 +278,7 @@ export class AccountingService {
     user: CurrentAuthUser,
     invoiceId: string,
   ) {
+    await this.requireView(user);
     const invoice = await this.findInvoiceOrThrow(
       user.organizationId,
       invoiceId,
@@ -250,6 +291,7 @@ export class AccountingService {
     user: CurrentAuthUser,
     dto: CreateInvoiceDto,
   ) {
+    await this.requireManage(user);
     if (!dto.lineItems?.length) {
       throw new BadRequestException(
         'حداقل یک ردیف برای فاکتور لازم است.',
@@ -356,6 +398,7 @@ export class AccountingService {
     invoiceId: string,
     dto: UpdateInvoiceStatusDto,
   ) {
+    await this.requireManage(user);
     await this.findInvoiceOrThrow(user.organizationId, invoiceId);
 
     const invoice = await this.prisma.accountingInvoice.update({
@@ -381,6 +424,7 @@ export class AccountingService {
     invoiceId: string,
     dto: RegisterInvoicePaymentDto,
   ) {
+    await this.requireManage(user);
     const invoice = await this.findInvoiceOrThrow(
       user.organizationId,
       invoiceId,

@@ -9,10 +9,10 @@ import {
   UseGuards,
 } from '@nestjs/common';
 
-import { CurrentUser } from '../../auth/decorators/current-user.decorator';
-import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
-import { RolesGuard } from '../../auth/guards/roles.guard';
-import type { AuthenticatedUser } from '../../auth/strategies/jwt.strategy';
+import { CurrentUser } from '../../core/auth/decorators/current-user.decorator';
+import { JwtAuthGuard } from '../../core/auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../core/auth/guards/roles.guard';
+import type { AuthenticatedUser } from '../../core/auth/strategies/jwt.strategy';
 import {
   AssignDepartmentEmployeeDto,
   CreateDepartmentTeamDto,

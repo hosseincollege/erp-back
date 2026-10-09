@@ -29,6 +29,7 @@ model Organization {
   departmentTeams    DepartmentTeam[]
   employees          Employee[]
   leaveRequests      LeaveRequest[]
+  businessTripRequests BusinessTripRequest[]
   attendanceRecords  AttendanceRecord[]
   payrollRecords     PayrollRecord[]
   memberships        OrganizationMember[]

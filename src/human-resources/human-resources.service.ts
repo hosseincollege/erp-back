@@ -14,6 +14,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
@@ -30,9 +31,12 @@ import {
 } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../core/notifications/notifications.service';
+import type { LocalizedNotificationText } from '../core/notifications/notifications.service';
 
 import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { CreateLeaveRequestDto } from './dto/create-leave-request.dto';
+import { CreateBusinessTripRequestDto } from './dto/create-business-trip-request.dto';
 import { UpdateEmployeeDto } from './dto/update-employee.dto';
 import { UpdateLeaveRequestStatusDto } from './dto/update-leave-request-status.dto';
 import { SaveAttendanceDto } from './dto/save-attendance.dto';
@@ -58,9 +62,26 @@ type LeaveRequestFilters = {
   leaveType?: LeaveType;
 };
 
+const tripNotificationText = {
+  requested: {
+    title: { fa: 'درخواست مأموریت جدید', en: 'New business trip request', ar: 'طلب مهمة عمل جديد', 'zh-CN': '新的出差申请', fr: 'Nouvelle demande de déplacement', es: 'Nueva solicitud de viaje de trabajo', de: 'Neuer Dienstreiseantrag', ru: 'Новая заявка на командировку', ja: '新しい出張申請', 'pt-BR': 'Nova solicitação de viagem a trabalho' },
+    body: (destination: string): LocalizedNotificationText => ({ fa: `درخواست مأموریت به مقصد ${destination} برای بررسی ثبت شد.`, en: `A business trip request to ${destination} is waiting for review.`, ar: `طلب مهمة عمل إلى ${destination} بانتظار المراجعة.`, 'zh-CN': `前往${destination}的出差申请正在等待审核。`, fr: `Une demande de déplacement vers ${destination} attend votre examen.`, es: `Una solicitud de viaje de trabajo a ${destination} está pendiente de revisión.`, de: `Ein Dienstreiseantrag nach ${destination} wartet auf Prüfung.`, ru: `Заявка на командировку в ${destination} ожидает рассмотрения.`, ja: `${destination}への出張申請が審査待ちです。`, 'pt-BR': `Uma solicitação de viagem a trabalho para ${destination} aguarda análise.` }),
+  },
+  reviewed: {
+    title: { fa: 'به‌روزرسانی درخواست مأموریت', en: 'Business trip request updated', ar: 'تم تحديث طلب مهمة العمل', 'zh-CN': '出差申请已更新', fr: 'Demande de déplacement mise à jour', es: 'Solicitud de viaje actualizada', de: 'Dienstreiseantrag aktualisiert', ru: 'Заявка на командировку обновлена', ja: '出張申請が更新されました', 'pt-BR': 'Solicitação de viagem atualizada' },
+    body: (destination: string, status: LeaveRequestStatus): LocalizedNotificationText => {
+      const state = {
+        fa: { APPROVED: 'تأیید شد', REJECTED: 'رد شد', CANCELLED: 'لغو شد' }, en: { APPROVED: 'approved', REJECTED: 'rejected', CANCELLED: 'cancelled' }, ar: { APPROVED: 'تمت الموافقة عليها', REJECTED: 'تم رفضها', CANCELLED: 'تم إلغاؤها' }, 'zh-CN': { APPROVED: '已批准', REJECTED: '已拒绝', CANCELLED: '已取消' }, fr: { APPROVED: 'approuvée', REJECTED: 'refusée', CANCELLED: 'annulée' }, es: { APPROVED: 'aprobada', REJECTED: 'rechazada', CANCELLED: 'cancelada' }, de: { APPROVED: 'genehmigt', REJECTED: 'abgelehnt', CANCELLED: 'storniert' }, ru: { APPROVED: 'одобрена', REJECTED: 'отклонена', CANCELLED: 'отменена' }, ja: { APPROVED: '承認', REJECTED: '却下', CANCELLED: 'キャンセル' }, 'pt-BR': { APPROVED: 'aprovada', REJECTED: 'recusada', CANCELLED: 'cancelada' },
+      };
+      return { fa: `درخواست مأموریت به مقصد ${destination} ${state.fa[status]}.`, en: `The business trip request to ${destination} was ${state.en[status]}.`, ar: `طلب مهمة العمل إلى ${destination} ${state.ar[status]}.`, 'zh-CN': `前往${destination}的出差申请${state['zh-CN'][status]}。`, fr: `La demande de déplacement vers ${destination} a été ${state.fr[status]}.`, es: `La solicitud de viaje a ${destination} fue ${state.es[status]}.`, de: `Der Dienstreiseantrag nach ${destination} wurde ${state.de[status]}.`, ru: `Заявка на командировку в ${destination} ${state.ru[status]}.`, ja: `${destination}への出張申請は${state.ja[status]}されました。`, 'pt-BR': `A solicitação de viagem para ${destination} foi ${state['pt-BR'][status]}.` };
+    },
+  },
+} as const;
+
 @Injectable()
 export class HumanResourcesService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(HumanResourcesService.name);
+  constructor(private readonly prisma: PrismaService, private readonly notifications: NotificationsService) {}
 
   /**
    * اطمینان از وجود سازمان فعال برای کاربر جاری
@@ -1484,5 +1505,89 @@ export class HumanResourcesService {
     } catch (error) {
       this.handlePrismaError(error);
     }
+  }
+
+  async getBusinessTripRequests(user: CurrentAuthUser, status?: LeaveRequestStatus) {
+    const { organizationId, canViewLeaves, employeeId } = await this.getMembershipAccess(user);
+    if (!canViewLeaves && !employeeId) return [];
+    return this.prisma.businessTripRequest.findMany({
+      where: { organizationId, ...(status ? { status } : {}), ...(!canViewLeaves ? { employeeId: employeeId! } : {}) },
+      include: {
+        employee: { select: { id: true, employeeCode: true, firstName: true, lastName: true, jobTitle: true, branch: { select: { id: true, name: true } }, department: { select: { id: true, name: true } } } },
+        reviewedBy: { select: { id: true, username: true, firstName: true, lastName: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  private async notifyTripReviewers(request: { id: string; organizationId: string; destination: string }) {
+    const memberships = await this.prisma.organizationMember.findMany({
+      where: { organizationId: request.organizationId, status: 'ACTIVE', organization: { status: 'ACTIVE' } },
+      select: { userId: true, roles: { select: { role: { select: { key: true, permissions: { select: { permission: { select: { key: true } } } } } } } }, organization: { select: { ownerId: true } } },
+    });
+    const recipients = memberships.filter((membership) => membership.userId === membership.organization.ownerId || membership.roles.some(({ role }) => ['ADMIN', 'SUPER_ADMIN'].includes(role.key.toUpperCase()) || role.permissions.some(({ permission }) => ['hr.write', 'hr.leaves.approve'].includes(permission.key)))).map(({ userId }) => userId);
+    const outcomes = await Promise.allSettled(recipients.map((recipientUserId) => this.notifications.createForUser({
+      organizationId: request.organizationId, recipientUserId, source: 'human-resources', eventKey: 'hr.business_trip.requested',
+      title: tripNotificationText.requested.title, body: tripNotificationText.requested.body(request.destination), href: '/hr/leaves',
+      metadata: { requestId: request.id, requestType: 'business-trip' },
+    })));
+    outcomes.forEach((outcome) => { if (outcome.status === 'rejected') this.logger.warn(`Could not notify a business trip reviewer: ${String(outcome.reason)}`); });
+  }
+
+  private async notifyTripEmployee(request: { id: string; organizationId: string; employee: { userId: string | null }; destination: string }, status: 'APPROVED' | 'REJECTED' | 'CANCELLED') {
+    if (!request.employee.userId) return;
+    try {
+      await this.notifications.createForUser({
+        organizationId: request.organizationId, recipientUserId: request.employee.userId, source: 'human-resources', eventKey: 'hr.business_trip.reviewed',
+        title: tripNotificationText.reviewed.title, body: tripNotificationText.reviewed.body(request.destination, status), href: '/hr/leaves',
+        metadata: { requestId: request.id, requestType: 'business-trip', status },
+      });
+    } catch (error) {
+      this.logger.warn(`Could not notify employee about business trip ${request.id}: ${String(error)}`);
+    }
+  }
+
+  async createBusinessTripRequest(user: CurrentAuthUser, dto: CreateBusinessTripRequestDto) {
+    const access = await this.getMembershipAccess(user);
+    if (!access.employeeId) throw new ForbiddenException('برای ثبت درخواست مأموریت، پروندهٔ کارمندی باید به حساب متصل باشد.');
+    if (!dto.destination.trim() || !dto.purpose.trim()) throw new BadRequestException('مقصد و هدف مأموریت را وارد کنید.');
+    const startAt = new Date(dto.startAt);
+    const endAt = new Date(dto.endAt);
+    if (startAt >= endAt) throw new BadRequestException('زمان پایان مأموریت باید بعد از زمان شروع باشد.');
+    const created = await this.prisma.businessTripRequest.create({
+      data: {
+        organizationId: access.organizationId, employeeId: access.employeeId,
+        destination: dto.destination.trim(), purpose: dto.purpose.trim(), startAt, endAt,
+        estimatedCost: dto.estimatedCost == null ? null : new Prisma.Decimal(dto.estimatedCost),
+        currency: dto.currency?.toUpperCase() || 'IRR',
+      },
+      include: { employee: { select: { id: true, employeeCode: true, firstName: true, lastName: true } } },
+    });
+    await this.notifyTripReviewers(created).catch((error) => this.logger.warn(`Could not notify business trip reviewers: ${String(error)}`));
+    return created;
+  }
+
+  async updateBusinessTripRequestStatus(user: CurrentAuthUser, requestId: string, dto: UpdateLeaveRequestStatusDto) {
+    const access = await this.getMembershipAccess(user);
+    const request = await this.prisma.businessTripRequest.findFirst({ where: { id: requestId, organizationId: access.organizationId } });
+    if (!request) throw new NotFoundException('درخواست مأموریت پیدا نشد.');
+    const isOwnCancellation = !access.canManageLeaves && request.employeeId === access.employeeId && dto.status === LeaveRequestStatus.CANCELLED;
+    if (!access.canManageLeaves && !isOwnCancellation) throw new ForbiddenException('مجوز بررسی درخواست‌های مأموریت را ندارید.');
+    if (isOwnCancellation && request.status !== LeaveRequestStatus.PENDING) throw new BadRequestException('فقط درخواست در انتظار بررسی قابل لغو است.');
+    if (!isOwnCancellation && request.status !== LeaveRequestStatus.PENDING) throw new BadRequestException('فقط درخواست در انتظار بررسی قابل تغییر وضعیت است.');
+    if (dto.status === LeaveRequestStatus.DRAFT) throw new BadRequestException('وضعیت پیش‌نویس برای این درخواست مجاز نیست.');
+    const updated = await this.prisma.businessTripRequest.update({
+      where: { id: request.id },
+      data: {
+        status: dto.status,
+        reviewerNote: dto.reviewerNote?.trim() || null,
+        reviewedById: isOwnCancellation ? null : user.id,
+        reviewedAt: isOwnCancellation ? null : new Date(),
+        cancelledAt: dto.status === LeaveRequestStatus.CANCELLED ? new Date() : null,
+      },
+      include: { employee: { select: { id: true, userId: true, employeeCode: true, firstName: true, lastName: true } } },
+    });
+    if (!isOwnCancellation) await this.notifyTripEmployee(updated, dto.status as 'APPROVED' | 'REJECTED' | 'CANCELLED');
+    return updated;
   }
 }

@@ -7,17 +7,17 @@ import { ConfigModule } from '@nestjs/config';
 import { AccountingModule } from './accounting/accounting.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-import { AuthModule } from './auth/auth.module';
+import { CommerceModule } from './commerce/commerce.module';
+import { AuthModule } from './core/auth/auth.module';
 import { HumanResourcesModule } from './human-resources/human-resources.module';
-import { InventoryModule } from './inventory/inventory.module';
+import { NotificationsModule } from './core/notifications/notifications.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { SetupModule } from './core/setup/setup.module';
+import { ReportsModule } from './reports/reports.module';
 import { SettingsModule } from './settings/settings.module';
-import { SetupModule } from './setup/setup.module';
-import { TicketsModule } from './tickets/tickets.module';
-import { ProjectsModule } from './projects/projects.module'; // ماژول پروژه اضافه شد
-import { CrmModule } from './crm/crm.module';
-import { NotificationsModule } from './notifications/notifications.module';
-import { SystemModule } from './system/system.module';
+import { SystemModule } from './core/system/system.module';
+import { SupplyModule } from './supply/supply.module';
+import { SupportModule } from './support/support.module';
 
 @Module({
   imports: [
@@ -27,14 +27,14 @@ import { SystemModule } from './system/system.module';
 
     PrismaModule,
     AuthModule,
-    TicketsModule,
-    ProjectsModule, // ثبت ماژول پروژه
     SetupModule,
     AccountingModule,
+    CommerceModule,
     HumanResourcesModule,
-    InventoryModule,
+    SupplyModule,
+    ReportsModule,
     SettingsModule,
-    CrmModule,
+    SupportModule,
     NotificationsModule,
     SystemModule,
   ],

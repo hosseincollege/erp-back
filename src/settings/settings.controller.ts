@@ -17,11 +17,11 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Request } from 'express';
 
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { RolesGuard } from '../auth/guards/roles.guard';
-import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { Public } from '../auth/decorators/public.decorator';
-import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
+import { JwtAuthGuard } from '../core/auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../core/auth/guards/roles.guard';
+import { CurrentUser } from '../core/auth/decorators/current-user.decorator';
+import { Public } from '../core/auth/decorators/public.decorator';
+import type { AuthenticatedUser } from '../core/auth/strategies/jwt.strategy';
 
 import { SettingsService } from './settings.service';
 

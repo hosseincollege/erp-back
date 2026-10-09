@@ -32,6 +32,7 @@ model Employee {
   organization       Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   user               User?                  @relation("EmployeeUserAccount", fields: [userId], references: [id])
   leaveRequests      LeaveRequest[]
+  businessTripRequests BusinessTripRequest[]
   attendanceRecords  AttendanceRecord[]
   payrollRecords     PayrollRecord[]
 
@@ -86,6 +87,33 @@ model LeaveRequestStatusHistory {
   @@index([leaveRequestId, createdAt])
   @@index([actedById])
   @@map("leave_request_status_history")
+}
+
+model BusinessTripRequest {
+  id             String             @id @default(cuid())
+  organizationId String
+  employeeId     String
+  reviewedById   String?
+  destination    String
+  purpose        String
+  startAt        DateTime
+  endAt          DateTime
+  estimatedCost  Decimal?           @db.Decimal(18, 2)
+  currency       String             @default("IRR") @db.VarChar(3)
+  status         LeaveRequestStatus @default(PENDING)
+  reviewerNote   String?
+  reviewedAt     DateTime?
+  cancelledAt    DateTime?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  employee       Employee           @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  organization   Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  reviewedBy     User?              @relation("BusinessTripReviewer", fields: [reviewedById], references: [id])
+
+  @@index([organizationId, status])
+  @@index([employeeId, startAt])
+  @@index([reviewedById])
+  @@map("business_trip_requests")
 }
 
 model AttendanceRecord {
