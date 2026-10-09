@@ -10,13 +10,17 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateTicketDto } from './dto/create-ticket.dto';
 import { UpdateTicketDto, ResolveTicketDto } from './dto/update-ticket.dto';
 import { TicketStatus } from '@prisma/client';
+import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
+import { ProjectsService } from '../projects/projects.service';
 
 @Injectable()
 export class TicketsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private projects: ProjectsService) {}
 
-  async create(createTicketDto: CreateTicketDto, userId: string) {
+  async create(createTicketDto: CreateTicketDto, user: AuthenticatedUser) {
+    const project = await this.projects.assertSupportProjectAccess(user, createTicketDto.projectId, true);
     const lastTicket = await this.prisma.ticket.aggregate({
+      where: { organizationId: project.organizationId },
       _max: {
         ticketNumber: true,
       },
@@ -26,6 +30,8 @@ export class TicketsService {
 
     return this.prisma.ticket.create({
       data: {
+        organizationId: project.organizationId,
+        projectId: project.id,
         ticketNumber: nextTicketNumber,
         subject: createTicketDto.subject,
         description: createTicketDto.description,
@@ -36,7 +42,7 @@ export class TicketsService {
         dueAt: createTicketDto.dueAt
           ? new Date(createTicketDto.dueAt)
           : undefined,
-        creatorId: userId,
+        creatorId: user.id,
       },
       include: {
         creator: {
@@ -52,19 +58,32 @@ export class TicketsService {
   }
 
   async findAll(
+    user: AuthenticatedUser,
     filters: {
       status?: string;
       priority?: string;
       search?: string;
       accountId?: string;
       contactId?: string;
+      projectId?: string;
     } = {},
   ) {
-    const { status, priority, search, accountId, contactId } = filters;
+    const { status, priority, search, accountId, contactId, projectId } = filters;
+    const accessibleProjects = await this.projects.findSupportProjects(user);
+    if (projectId) await this.projects.assertSupportProjectAccess(user, projectId);
 
     return this.prisma.ticket.findMany({
       where: {
+        organizationId: user.organizationId,
         AND: [
+          projectId
+            ? { projectId }
+            : {
+                OR: [
+                  { projectId: { in: accessibleProjects.map(({ id }) => id) } },
+                  { projectId: null, creatorId: user.id },
+                ],
+              },
           status ? { status: status as any } : {},
           priority ? { priority: priority as any } : {},
           accountId ? { accountId } : {},
@@ -107,6 +126,21 @@ export class TicketsService {
         createdAt: 'desc',
       },
     });
+  }
+
+  async findOneForUser(id: string, user: AuthenticatedUser) {
+    await this.projects.findSupportProjects(user);
+    const ticket = await this.prisma.ticket.findFirst({
+      where: { id, organizationId: user.organizationId },
+      select: { id: true, projectId: true, creatorId: true },
+    });
+    if (!ticket) throw new NotFoundException('تیکت مورد نظر یافت نشد.');
+    if (ticket.projectId) {
+      await this.projects.assertSupportProjectAccess(user, ticket.projectId);
+    } else if (ticket.creatorId !== user.id) {
+      throw new NotFoundException('تیکت مورد نظر یافت نشد.');
+    }
+    return this.findOne(id);
   }
 
   async findOne(id: string) {

@@ -23,20 +23,22 @@ export class TicketsController {
     @Body() createTicketDto: CreateTicketDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.ticketsService.create(createTicketDto, user.id);
+    return this.ticketsService.create(createTicketDto, user);
   }
 
   @Get()
   findAll(
+    @CurrentUser() user: AuthenticatedUser,
     @Query('status') status?: string,
     @Query('priority') priority?: string,
     @Query('search') search?: string,
+    @Query('projectId') projectId?: string,
   ) {
-    return this.ticketsService.findAll({ status, priority, search });
+    return this.ticketsService.findAll(user, { status, priority, search, projectId });
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.ticketsService.findOne(id);
+  findOne(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.ticketsService.findOneForUser(id, user);
   }
 }

@@ -11,6 +11,7 @@ import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
+import { UpdateUserPreferencesDto } from './dto/update-user-preferences.dto';
 
 type AuthUser = {
   id: string;
@@ -120,7 +121,10 @@ export class AuthService {
       throw new UnauthorizedException('کاربر یا رمز عبور نادرست است');
     }
 
-    const passwordIsValid = await bcrypt.compare(dto.password, user.passwordHash);
+    const passwordIsValid = await bcrypt.compare(
+      dto.password,
+      user.passwordHash,
+    );
 
     if (!passwordIsValid || user.status !== 'ACTIVE') {
       throw new UnauthorizedException('کاربر یا رمز عبور نادرست است');
@@ -155,7 +159,9 @@ export class AuthService {
     const user = await this.validateUser(userId);
 
     if (!user) {
-      throw new UnauthorizedException('کاربر یافت نشد یا حساب کاربری فعال نیست');
+      throw new UnauthorizedException(
+        'کاربر یافت نشد یا حساب کاربری فعال نیست',
+      );
     }
 
     const membership = await this.prisma.organizationMember.findFirst({
@@ -180,10 +186,35 @@ export class AuthService {
     };
   }
 
-  private createAuthResponse(
-    user: AuthUser,
-    organizationId: string | null,
-  ) {
+  async getPreferences(userId: string) {
+    return this.prisma.userPreference.upsert({
+      where: { userId },
+      create: { userId },
+      update: {},
+      select: {
+        locale: true,
+        accentColor: true,
+        lightContrast: true,
+        darkContrast: true,
+      },
+    });
+  }
+
+  async updatePreferences(userId: string, dto: UpdateUserPreferencesDto) {
+    return this.prisma.userPreference.upsert({
+      where: { userId },
+      create: { userId, ...dto },
+      update: dto,
+      select: {
+        locale: true,
+        accentColor: true,
+        lightContrast: true,
+        darkContrast: true,
+      },
+    });
+  }
+
+  private createAuthResponse(user: AuthUser, organizationId: string | null) {
     return {
       access_token: this.jwtService.sign({
         sub: user.id,

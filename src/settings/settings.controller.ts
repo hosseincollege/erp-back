@@ -25,17 +25,17 @@ import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 
 import { SettingsService } from './settings.service';
 
-import { CreateOrganizationDto } from './dto/create-organization.dto';
-import { UpdateOrganizationSettingsDto } from './dto/update-organization-settings.dto';
+import { CreateOrganizationDto } from './company/dto/create-organization.dto';
+import { UpdateOrganizationSettingsDto } from './company/dto/update-organization-settings.dto';
 
-import { CreateBranchDto } from './dto/create-branch.dto';
-import { UpdateBranchDto } from './dto/update-branch.dto';
+import { CreateBranchDto } from './organization/dto/create-branch.dto';
+import { UpdateBranchDto } from './organization/dto/update-branch.dto';
 
-import { CreateDepartmentDto } from './dto/create-department.dto';
-import { UpdateDepartmentDto } from './dto/update-department.dto';
+import { CreateDepartmentDto } from './organization/dto/create-department.dto';
+import { UpdateDepartmentDto } from './organization/dto/update-department.dto';
 
-import { ImportOrganizationDto } from './dto/import-organization.dto';
-import { SaveRoleDto } from './dto/save-role.dto';
+import { ImportOrganizationDto } from './company/dto/import-organization.dto';
+import { SaveRoleDto } from './roles/dto/save-role.dto';
 
 @Controller('settings')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -187,91 +187,115 @@ export class SettingsController {
   }
 
   @Get('branches/:organizationId')
-  async getBranches(@Param('organizationId') organizationId: string) {
+  async getBranches(
+    @Param('organizationId') organizationId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
     if (!organizationId || organizationId.trim() === '') {
       throw new BadRequestException('شناسه سازمان نامعتبر است.');
     }
 
-    return this.settingsService.getBranches(organizationId.trim());
+    return this.settingsService.getBranches(organizationId.trim(), user);
   }
 
   @Post('branches')
-  async createBranch(@Body() dto: CreateBranchDto) {
+  async createBranch(
+    @Body() dto: CreateBranchDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
     if (!dto.organizationId || dto.organizationId.trim() === '') {
-      throw new BadRequestException(
-        'شناسه سازمان برای ایجاد شعبه الزامی است.',
-      );
+      throw new BadRequestException('شناسه سازمان برای ایجاد شعبه الزامی است.');
     }
 
-    return this.settingsService.createBranch(dto);
+    return this.settingsService.createBranch(dto, user);
   }
 
   @Put('branches/:id')
-  async updateBranch(@Param('id') id: string, @Body() dto: UpdateBranchDto) {
+  async updateBranch(
+    @Param('id') id: string,
+    @Body() dto: UpdateBranchDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
     if (!id || id.trim() === '') {
       throw new BadRequestException('شناسه شعبه نامعتبر است.');
     }
 
-    return this.settingsService.updateBranch(id.trim(), dto);
+    return this.settingsService.updateBranch(id.trim(), dto, user);
   }
 
   @Delete('branches/:id')
-  async deleteBranch(@Param('id') id: string) {
+  async deleteBranch(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
     if (!id || id.trim() === '') {
       throw new BadRequestException('شناسه شعبه نامعتبر است.');
     }
 
-    return this.settingsService.deleteBranch(id.trim());
+    return this.settingsService.deleteBranch(id.trim(), user);
   }
 
   @Get('departments/:organizationId')
-  async getDepartments(@Param('organizationId') organizationId: string) {
+  async getDepartments(
+    @Param('organizationId') organizationId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
     if (!organizationId || organizationId.trim() === '') {
       throw new BadRequestException('شناسه سازمان نامعتبر است.');
     }
 
-    return this.settingsService.getDepartments(organizationId.trim());
+    return this.settingsService.getDepartments(organizationId.trim(), user);
   }
 
   @Post('departments')
-  async createDepartment(@Body() dto: CreateDepartmentDto) {
+  async createDepartment(
+    @Body() dto: CreateDepartmentDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
     if (!dto.organizationId || dto.organizationId.trim() === '') {
       throw new BadRequestException(
         'شناسه سازمان برای ایجاد دپارتمان الزامی است.',
       );
     }
 
-    return this.settingsService.createDepartment(dto);
+    return this.settingsService.createDepartment(dto, user);
   }
 
   @Put('departments/:id')
   async updateDepartment(
     @Param('id') id: string,
     @Body() dto: UpdateDepartmentDto,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
     if (!id || id.trim() === '') {
       throw new BadRequestException('شناسه دپارتمان نامعتبر است.');
     }
 
-    return this.settingsService.updateDepartment(id.trim(), dto);
+    return this.settingsService.updateDepartment(id.trim(), dto, user);
   }
 
   @Delete('departments/:id')
-  async deleteDepartment(@Param('id') id: string) {
+  async deleteDepartment(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
     if (!id || id.trim() === '') {
       throw new BadRequestException('شناسه دپارتمان نامعتبر است.');
     }
 
-    return this.settingsService.deleteDepartment(id.trim());
+    return this.settingsService.deleteDepartment(id.trim(), user);
   }
 
   @Get('users/:organizationId')
-  async getUsers(@Param('organizationId') organizationId: string) {
+  async getUsers(
+    @Param('organizationId') organizationId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
     if (!organizationId || organizationId.trim() === '') {
       throw new BadRequestException('شناسه سازمان نامعتبر است.');
     }
 
-    return this.settingsService.getUsers(organizationId.trim());
+    return this.settingsService.getUsers(organizationId.trim(), user);
   }
 
   /**
@@ -281,6 +305,7 @@ export class SettingsController {
   async saveUsers(
     @Param('organizationId') organizationId: string,
     @Body() usersPayload: any,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
     if (!organizationId || organizationId.trim() === '') {
       throw new BadRequestException('شناسه سازمان نامعتبر است.');
@@ -296,7 +321,11 @@ export class SettingsController {
       usersList = usersPayload.data;
     }
 
-    return this.settingsService.saveUsers(organizationId.trim(), usersList);
+    return this.settingsService.saveUsers(
+      organizationId.trim(),
+      usersList,
+      user,
+    );
   }
 
   @Get('export/:organizationId')

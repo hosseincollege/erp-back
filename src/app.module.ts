@@ -16,6 +16,8 @@ import { SetupModule } from './setup/setup.module';
 import { TicketsModule } from './tickets/tickets.module';
 import { ProjectsModule } from './projects/projects.module'; // ماژول پروژه اضافه شد
 import { CrmModule } from './crm/crm.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { SystemModule } from './system/system.module';
 
 @Module({
   imports: [
@@ -33,6 +35,8 @@ import { CrmModule } from './crm/crm.module';
     InventoryModule,
     SettingsModule,
     CrmModule,
+    NotificationsModule,
+    SystemModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -19,17 +19,37 @@ model User {
   auditLogs                 AuditLog[]
   employeeProfiles          Employee[]                       @relation("EmployeeUserAccount")
   leaveRequestStatusActions LeaveRequestStatusHistory[]      @relation("LeaveRequestStatusActor")
+  recordedAttendance        AttendanceRecord[]               @relation("AttendanceRecorder")
+  createdPayrollRecords     PayrollRecord[]                  @relation("PayrollCreator")
+  approvedPayrollRecords    PayrollRecord[]                  @relation("PayrollApprover")
   reviewedLeaveRequests     LeaveRequest[]                   @relation("LeaveRequestReviewer")
   memberships               OrganizationMember[]
   ownedOrganizations        Organization[]                   @relation("OrganizationOwner")
   ticketMessages            TicketMessage[]
   assignedTickets           Ticket[]                         @relation("TicketAssignee")
   createdTickets            Ticket[]                         @relation("TicketCreator")
-  projectMemberships        ProjectMember[]                  // اضافه شده برای رفع خطای پریزما
+  projectMemberships        ProjectMember[] // اضافه شده برای رفع خطای پریزما
+  preferences               UserPreference?
+  notifications             Notification[]
+  createdAnnouncements      Announcement[]                   @relation("AnnouncementCreator")
 
   @@index([status])
   @@index([lastLoginAt])
   @@map("users")
+}
+
+model UserPreference {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  locale        String   @default("fa")
+  accentColor   String   @default("blue")
+  lightContrast String   @default("balanced")
+  darkContrast  String   @default("balanced")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_preferences")
 }
 
 enum UserStatus {

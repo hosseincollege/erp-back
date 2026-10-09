@@ -29,6 +29,8 @@ model Organization {
   departmentTeams    DepartmentTeam[]
   employees          Employee[]
   leaveRequests      LeaveRequest[]
+  attendanceRecords  AttendanceRecord[]
+  payrollRecords     PayrollRecord[]
   memberships        OrganizationMember[]
   settings           OrganizationSettings?
   installation       Installation?         @relation(fields: [installationId], references: [id])
@@ -36,6 +38,8 @@ model Organization {
   projects           Project[]
   roles              Role[]
   tickets            Ticket[]
+  notifications      Notification[]
+  announcements      Announcement[]
 
   @@index([installationId])
   @@index([status])
@@ -68,8 +72,8 @@ model Branch {
   code               String
   address            String?
   phone              String?
-  email              String?             // فیلد جدید
-  postalCode         String?             // فیلد جدید
+  email              String? // فیلد جدید
+  postalCode         String? // فیلد جدید
   isMain             Boolean             @default(false) // فیلد جدید
   isActive           Boolean             @default(true)
   createdAt          DateTime            @default(now())
@@ -79,7 +83,7 @@ model Branch {
   departments        Department[]
   employees          Employee[]
 
-  @@unique([organizationId, code])      // یکتایی کد در سطح هر سازمان
+  @@unique([organizationId, code]) // یکتایی کد در سطح هر سازمان
   @@index([organizationId])
   @@map("branches")
 }
@@ -101,11 +105,56 @@ model Department {
   manager            Employee?           @relation("DepartmentManager", fields: [managerEmployeeId], references: [id], onDelete: SetNull)
   teams              DepartmentTeam[]
 
-  @@unique([organizationId, code])      // یکتایی کد در سطح هر سازمان
+  @@unique([organizationId, code]) // یکتایی کد در سطح هر سازمان
   @@index([organizationId])
   @@index([branchId])
   @@index([managerEmployeeId])
   @@map("departments")
+}
+
+model Notification {
+  id              String        @id @default(cuid())
+  organizationId  String
+  recipientUserId String
+  source          String
+  eventKey        String
+  announcementId  String?
+  title           Json
+  body            Json?
+  href            String?
+  metadata        Json?
+  readAt          DateTime?
+  createdAt       DateTime      @default(now())
+  organization    Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  recipient       User          @relation(fields: [recipientUserId], references: [id], onDelete: Cascade)
+  announcement    Announcement? @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+
+  @@index([recipientUserId, readAt, createdAt])
+  @@index([organizationId, createdAt])
+  @@index([announcementId, recipientUserId])
+  @@map("notifications")
+}
+
+model Announcement {
+  id              String         @id @default(cuid())
+  organizationId  String
+  createdByUserId String?
+  title           String
+  summary         String?
+  body            String
+  locale          String         @default("fa")
+  category        String         @default("general")
+  priority        String         @default("normal")
+  isPinned        Boolean        @default(false)
+  isActive        Boolean        @default(true)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  organization    Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy       User?          @relation("AnnouncementCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  notifications   Notification[]
+
+  @@index([organizationId, isActive, isPinned, createdAt])
+  @@map("announcements")
 }
 
 enum OrganizationStatus {

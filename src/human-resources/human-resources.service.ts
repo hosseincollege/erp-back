@@ -12,16 +12,19 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 
 import {
+  AttendanceStatus,
   EmployeeStatus,
   EmploymentType,
   LeaveRequestStatus,
   LeaveType,
+  PayrollStatus,
   Prisma,
   UserStatus,
 } from '@prisma/client';
@@ -32,6 +35,9 @@ import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { CreateLeaveRequestDto } from './dto/create-leave-request.dto';
 import { UpdateEmployeeDto } from './dto/update-employee.dto';
 import { UpdateLeaveRequestStatusDto } from './dto/update-leave-request-status.dto';
+import { SaveAttendanceDto } from './dto/save-attendance.dto';
+import { SavePayrollDto } from './dto/save-payroll.dto';
+import { UpdatePayrollStatusDto } from './dto/update-payroll-status.dto';
 
 type CurrentAuthUser = {
   id: string;
@@ -67,6 +73,316 @@ export class HumanResourcesService {
     }
 
     return user.organizationId;
+  }
+
+  private async getWorkDate(organizationId: string, instant: Date): Promise<Date> {
+    const settings = await this.prisma.organizationSettings.findUnique({
+      where: { organizationId },
+      select: { timezone: true },
+    });
+    let dateText: string;
+    try {
+      dateText = new Intl.DateTimeFormat('en-CA', {
+        timeZone: settings?.timezone || 'Asia/Tehran',
+        year: 'numeric', month: '2-digit', day: '2-digit',
+      }).format(instant);
+    } catch {
+      dateText = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'UTC', year: 'numeric', month: '2-digit', day: '2-digit',
+      }).format(instant);
+    }
+    return new Date(`${dateText}T00:00:00.000Z`);
+  }
+
+  private async getMembershipAccess(user: CurrentAuthUser) {
+    const organizationId = this.getOrganizationId(user);
+    const membership = await this.prisma.organizationMember.findFirst({
+      where: {
+        organizationId,
+        userId: user.id,
+        status: 'ACTIVE',
+        organization: { status: 'ACTIVE' },
+      },
+      select: {
+        organization: { select: { ownerId: true } },
+        roles: {
+          select: {
+            role: {
+              select: {
+                key: true,
+                permissions: { select: { permission: { select: { key: true } } } },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!membership) throw new ForbiddenException('عضویت فعال سازمان برای این عملیات لازم است.');
+    const permissionKeys = new Set(membership.roles.flatMap(({ role }) =>
+      role.permissions.map(({ permission }) => permission.key),
+    ));
+    const isAdministrator = membership.organization.ownerId === user.id || membership.roles.some(
+      ({ role }) => ['ADMIN', 'SUPER_ADMIN'].includes(role.key.toUpperCase()),
+    );
+    const canManage = isAdministrator || permissionKeys.has('hr.write');
+    const canReadAll = canManage || permissionKeys.has('hr.read');
+    const canManageEmployees = canManage || permissionKeys.has('hr.employees.write');
+    const canViewEmployees = canReadAll || canManageEmployees || permissionKeys.has('hr.employees.read');
+    const canManageLeaves = canManage || permissionKeys.has('hr.leaves.write') || permissionKeys.has('hr.leaves.approve');
+    const canViewLeaves = canReadAll || canManageLeaves || permissionKeys.has('hr.leaves.read');
+    const canManageAttendance = canManage || permissionKeys.has('hr.attendance.write');
+    const canViewAttendance = canReadAll || canManageAttendance || permissionKeys.has('hr.attendance.read');
+    const canManagePayroll = canManage || permissionKeys.has('hr.payroll.write');
+    const canViewPayroll = canReadAll || canManagePayroll || permissionKeys.has('hr.payroll.read');
+    const employee = await this.prisma.employee.findFirst({
+      where: { organizationId, userId: user.id },
+      select: { id: true },
+    });
+
+    return {
+      organizationId, isAdministrator, canManage, canReadAll,
+      canManageEmployees, canViewEmployees, canManageLeaves, canViewLeaves,
+      canManageAttendance, canViewAttendance, canManagePayroll, canViewPayroll,
+      employeeId: employee?.id ?? null,
+    };
+  }
+
+  async getAccess(user: CurrentAuthUser) {
+    const access = await this.getMembershipAccess(user);
+    const { canReadAll, canManage, employeeId } = access;
+    return {
+      canViewOrganization: canReadAll,
+      canViewEmployees: access.canViewEmployees,
+      canManageEmployees: access.canManageEmployees,
+      canViewLeaves: access.canViewLeaves,
+      canManageLeaves: access.canManageLeaves,
+      canReviewLeave: access.canManageLeaves,
+      canViewAttendance: access.canViewAttendance,
+      canManageAttendance: access.canManageAttendance,
+      canViewPayroll: access.canViewPayroll,
+      canManagePayroll: access.canManagePayroll,
+      canManage,
+      canRequestLeave: Boolean(employeeId),
+      employeeId,
+    };
+  }
+
+  async getReferenceData(user: CurrentAuthUser) {
+    const access = await this.getMembershipAccess(user);
+    if (!access.canManageEmployees && !access.canManageAttendance && !access.canManagePayroll) {
+      throw new ForbiddenException('برای دریافت فهرست‌های منابع انسانی مجوز کافی ندارید.');
+    }
+    const [branches, departments, managers, members] = await Promise.all([
+      this.prisma.branch.findMany({
+        where: { organizationId: access.organizationId, isActive: true },
+        select: { id: true, name: true, code: true },
+        orderBy: { name: 'asc' },
+      }),
+      this.prisma.department.findMany({
+        where: { organizationId: access.organizationId, isActive: true },
+        select: { id: true, name: true, code: true, branchId: true },
+        orderBy: { name: 'asc' },
+      }),
+      this.prisma.employee.findMany({
+        where: { organizationId: access.organizationId, status: { not: EmployeeStatus.TERMINATED } },
+        select: { id: true, employeeCode: true, firstName: true, lastName: true, jobTitle: true },
+        orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
+      }),
+      access.canManageEmployees ? this.prisma.organizationMember.findMany({
+        where: {
+          organizationId: access.organizationId,
+          status: 'ACTIVE',
+          organization: { status: 'ACTIVE' },
+          user: { status: UserStatus.ACTIVE, employeeProfiles: { none: { organizationId: access.organizationId } } },
+        },
+        select: { user: { select: { id: true, username: true, firstName: true, lastName: true, email: true } } },
+        orderBy: { createdAt: 'asc' },
+      }) : Promise.resolve([]),
+    ]);
+    return {
+      branches,
+      departments,
+      managers,
+      employees: managers,
+      availableUsers: members.map(({ user: member }) => member),
+    };
+  }
+
+  async getAttendance(user: CurrentAuthUser, requestedDate?: string) {
+    const access = await this.getMembershipAccess(user);
+    if (!access.canViewAttendance && !access.employeeId) {
+      throw new ForbiddenException('مجوز مشاهدهٔ حضور و غیاب را ندارید.');
+    }
+    const dateText = requestedDate || new Date().toISOString().slice(0, 10);
+    const workDate = new Date(`${dateText}T00:00:00.000Z`);
+    if (Number.isNaN(workDate.getTime()) || workDate.toISOString().slice(0, 10) !== dateText) {
+      throw new BadRequestException('تاریخ حضور و غیاب معتبر نیست.');
+    }
+    return this.prisma.attendanceRecord.findMany({
+      where: {
+        organizationId: access.organizationId,
+        workDate,
+        ...(access.canViewAttendance ? {} : { employeeId: access.employeeId! }),
+      },
+      include: {
+        employee: {
+          select: {
+            id: true, employeeCode: true, firstName: true, lastName: true,
+            jobTitle: true, branch: { select: { id: true, name: true } },
+            department: { select: { id: true, name: true } },
+          },
+        },
+      },
+      orderBy: [{ employee: { firstName: 'asc' } }, { employee: { lastName: 'asc' } }],
+    });
+  }
+
+  async saveAttendance(user: CurrentAuthUser, dto: SaveAttendanceDto) {
+    const access = await this.getMembershipAccess(user);
+    if (!access.canManageAttendance) throw new ForbiddenException('مجوز ثبت حضور و غیاب را ندارید.');
+    const workDate = new Date(`${dto.workDate.slice(0, 10)}T00:00:00.000Z`);
+    if (Number.isNaN(workDate.getTime())) throw new BadRequestException('تاریخ حضور و غیاب معتبر نیست.');
+    const employee = await this.prisma.employee.findFirst({
+      where: { id: dto.employeeId, organizationId: access.organizationId, status: { not: EmployeeStatus.TERMINATED } },
+      select: { id: true },
+    });
+    if (!employee) throw new NotFoundException('کارمند فعال در سازمان جاری پیدا نشد.');
+    const checkInAt = this.parseDate(dto.checkInAt, 'checkInAt');
+    const checkOutAt = this.parseDate(dto.checkOutAt, 'checkOutAt');
+    if (checkInAt && checkOutAt && checkOutAt <= checkInAt) {
+      throw new BadRequestException('زمان خروج باید بعد از زمان ورود باشد.');
+    }
+    try {
+      return await this.prisma.attendanceRecord.upsert({
+        where: { employeeId_workDate: { employeeId: employee.id, workDate } },
+        create: {
+          organizationId: access.organizationId,
+          employeeId: employee.id,
+          workDate,
+          checkInAt,
+          checkOutAt,
+          status: dto.status ?? AttendanceStatus.PRESENT,
+          note: dto.note?.trim() || null,
+          recordedById: user.id,
+        },
+        update: {
+          checkInAt,
+          checkOutAt,
+          status: dto.status ?? AttendanceStatus.PRESENT,
+          note: dto.note?.trim() || null,
+          recordedById: user.id,
+        },
+        include: { employee: { select: { id: true, employeeCode: true, firstName: true, lastName: true } } },
+      });
+    } catch (error) {
+      this.handlePrismaError(error);
+    }
+  }
+
+  async checkIn(user: CurrentAuthUser) {
+    const access = await this.getMembershipAccess(user);
+    if (!access.employeeId) throw new ForbiddenException('برای ثبت ورود، پروندهٔ کارمندی متصل به حساب لازم است.');
+    const employee = await this.prisma.employee.findFirst({
+      where: { id: access.employeeId, organizationId: access.organizationId, status: { not: EmployeeStatus.TERMINATED } },
+      select: { id: true },
+    });
+    if (!employee) throw new ForbiddenException('پروندهٔ کاربری برای ثبت ورود فعال نیست.');
+    const now = new Date();
+    const workDate = await this.getWorkDate(access.organizationId, now);
+    const current = await this.prisma.attendanceRecord.findUnique({
+      where: { employeeId_workDate: { employeeId: employee.id, workDate } },
+    });
+    if (current?.checkInAt) throw new ConflictException('ورود امروز قبلاً ثبت شده است.');
+    return this.prisma.attendanceRecord.upsert({
+      where: { employeeId_workDate: { employeeId: employee.id, workDate } },
+      create: { organizationId: access.organizationId, employeeId: employee.id, workDate, checkInAt: now, status: AttendanceStatus.PRESENT, recordedById: user.id },
+      update: { checkInAt: now, status: current?.status ?? AttendanceStatus.PRESENT, recordedById: user.id },
+    });
+  }
+
+  async checkOut(user: CurrentAuthUser) {
+    const access = await this.getMembershipAccess(user);
+    if (!access.employeeId) throw new ForbiddenException('برای ثبت خروج، پروندهٔ کارمندی متصل به حساب لازم است.');
+    const now = new Date();
+    const workDate = await this.getWorkDate(access.organizationId, now);
+    const current = await this.prisma.attendanceRecord.findUnique({
+      where: { employeeId_workDate: { employeeId: access.employeeId, workDate } },
+    });
+    if (!current?.checkInAt) throw new BadRequestException('ابتدا باید ورود امروز را ثبت کنید.');
+    if (current.checkOutAt) throw new ConflictException('خروج امروز قبلاً ثبت شده است.');
+    if (now <= current.checkInAt) throw new BadRequestException('زمان خروج باید بعد از زمان ورود باشد.');
+    return this.prisma.attendanceRecord.update({ where: { id: current.id }, data: { checkOutAt: now, recordedById: user.id } });
+  }
+
+  async getPayroll(user: CurrentAuthUser, period?: string) {
+    const access = await this.getMembershipAccess(user);
+    if (!access.canViewPayroll && !access.employeeId) {
+      throw new ForbiddenException('مجوز مشاهدهٔ فیش حقوقی را ندارید.');
+    }
+    if (period && !/^\d{4}-(0[1-9]|1[0-2])$/.test(period)) {
+      throw new BadRequestException('دورهٔ حقوق باید با قالب YYYY-MM باشد.');
+    }
+    return this.prisma.payrollRecord.findMany({
+      where: {
+        organizationId: access.organizationId,
+        ...(period ? { period } : {}),
+        ...(access.canViewPayroll ? {} : { employeeId: access.employeeId! }),
+      },
+      include: { employee: { select: { id: true, employeeCode: true, firstName: true, lastName: true, jobTitle: true, branch: { select: { name: true } }, department: { select: { name: true } } } } },
+      orderBy: [{ period: 'desc' }, { employee: { firstName: 'asc' } }],
+    });
+  }
+
+  async savePayroll(user: CurrentAuthUser, dto: SavePayrollDto) {
+    const access = await this.getMembershipAccess(user);
+    if (!access.canManagePayroll) throw new ForbiddenException('مجوز مدیریت حقوق و دستمزد را ندارید.');
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(dto.period)) throw new BadRequestException('دورهٔ حقوق معتبر نیست.');
+    const employee = await this.prisma.employee.findFirst({
+      where: { id: dto.employeeId, organizationId: access.organizationId },
+      select: { id: true },
+    });
+    if (!employee) throw new NotFoundException('کارمند در سازمان جاری پیدا نشد.');
+    const baseSalary = new Prisma.Decimal(dto.baseSalary);
+    const overtime = new Prisma.Decimal(dto.overtime ?? 0);
+    const allowances = new Prisma.Decimal(dto.allowances ?? 0);
+    const deductions = new Prisma.Decimal(dto.deductions ?? 0);
+    const netAmount = baseSalary.add(overtime).add(allowances).sub(deductions);
+    if (netAmount.lessThan(0)) throw new BadRequestException('کسورات نمی‌تواند از مجموع دریافتی بیشتر باشد.');
+    const current = await this.prisma.payrollRecord.findUnique({
+      where: { employeeId_period: { employeeId: employee.id, period: dto.period } },
+      select: { id: true, status: true },
+    });
+    if (current && current.status !== PayrollStatus.DRAFT) {
+      throw new ConflictException('فقط فیش پیش‌نویس قابل ویرایش است.');
+    }
+    const data = {
+      currency: dto.currency ?? 'IRR', baseSalary, overtime, allowances, deductions,
+      netAmount, note: dto.note?.trim() || null,
+    };
+    return current
+      ? this.prisma.payrollRecord.update({ where: { id: current.id }, data, include: { employee: { select: { id: true, employeeCode: true, firstName: true, lastName: true } } } })
+      : this.prisma.payrollRecord.create({
+          data: { ...data, organizationId: access.organizationId, employeeId: employee.id, period: dto.period, createdById: user.id },
+          include: { employee: { select: { id: true, employeeCode: true, firstName: true, lastName: true } } },
+        });
+  }
+
+  async updatePayrollStatus(user: CurrentAuthUser, payrollId: string, dto: UpdatePayrollStatusDto) {
+    const access = await this.getMembershipAccess(user);
+    if (!access.canManagePayroll) throw new ForbiddenException('مجوز تأیید یا پرداخت حقوق را ندارید.');
+    const record = await this.prisma.payrollRecord.findFirst({
+      where: { id: payrollId, organizationId: access.organizationId },
+      select: { id: true, status: true },
+    });
+    if (!record) throw new NotFoundException('فیش حقوقی در سازمان جاری پیدا نشد.');
+    if (record.status === PayrollStatus.DRAFT && dto.status === PayrollStatus.APPROVED) {
+      return this.prisma.payrollRecord.update({ where: { id: record.id }, data: { status: PayrollStatus.APPROVED, approvedById: user.id, approvedAt: new Date() } });
+    }
+    if (record.status === PayrollStatus.APPROVED && dto.status === PayrollStatus.PAID) {
+      return this.prisma.payrollRecord.update({ where: { id: record.id }, data: { status: PayrollStatus.PAID, paidAt: new Date() } });
+    }
+    throw new BadRequestException('تغییر وضعیت فیش حقوقی با این ترتیب مجاز نیست.');
   }
 
   /**
@@ -240,7 +556,31 @@ export class HumanResourcesService {
    * داشبورد منابع انسانی
    */
   async getDashboard(user: CurrentAuthUser) {
-    const organizationId = this.getOrganizationId(user);
+    const { organizationId, canReadAll, employeeId } = await this.getMembershipAccess(user);
+    if (!canReadAll) {
+      if (!employeeId) {
+        return {
+          employees: { total: 0, active: 0, onLeave: 0, terminated: 0 },
+          leaveRequests: { total: 0, pending: 0, approved: 0, rejected: 0 },
+        };
+      }
+      const [employee, counts] = await Promise.all([
+        this.prisma.employee.findUnique({ where: { id: employeeId }, select: { status: true } }),
+        this.prisma.leaveRequest.groupBy({
+          by: ['status'], where: { organizationId, employeeId }, _count: { _all: true },
+        }),
+      ]);
+      const leaveCounts = new Map(counts.map(({ status, _count }) => [status, _count._all]));
+      return {
+        employees: { total: 1, active: employee?.status === EmployeeStatus.ACTIVE ? 1 : 0, onLeave: employee?.status === EmployeeStatus.ON_LEAVE ? 1 : 0, terminated: employee?.status === EmployeeStatus.TERMINATED ? 1 : 0 },
+        leaveRequests: {
+          total: counts.reduce((total, item) => total + item._count._all, 0),
+          pending: leaveCounts.get(LeaveRequestStatus.PENDING) ?? 0,
+          approved: leaveCounts.get(LeaveRequestStatus.APPROVED) ?? 0,
+          rejected: leaveCounts.get(LeaveRequestStatus.REJECTED) ?? 0,
+        },
+      };
+    }
 
     const [
       totalEmployees,
@@ -330,7 +670,7 @@ export class HumanResourcesService {
     user: CurrentAuthUser,
     filters: EmployeeFilters = {},
   ) {
-    const organizationId = this.getOrganizationId(user);
+    const { organizationId, canViewEmployees, employeeId } = await this.getMembershipAccess(user);
 
     const where: Prisma.EmployeeWhereInput = {
       organizationId,
@@ -395,17 +735,17 @@ export class HumanResourcesService {
       ];
     }
 
+    if (!canViewEmployees) {
+      if (!employeeId) return [];
+      where.id = employeeId;
+    }
+
     return this.prisma.employee.findMany({
       where,
       include: {
-        user: true,
+        user: { select: { id: true, username: true, firstName: true, lastName: true, email: true, phone: true, status: true } },
         branch: true,
         department: true,
-        leaveRequests: {
-          orderBy: {
-            startAt: 'desc',
-          },
-        },
       },
       orderBy: [
         {
@@ -425,7 +765,10 @@ export class HumanResourcesService {
     user: CurrentAuthUser,
     employeeId: string,
   ) {
-    const organizationId = this.getOrganizationId(user);
+    const { organizationId, canViewEmployees, canViewLeaves, employeeId: ownEmployeeId } = await this.getMembershipAccess(user);
+    if (!canViewEmployees && ownEmployeeId !== employeeId) {
+      throw new ForbiddenException('برای مشاهده پروندهٔ این کارمند مجوز ندارید.');
+    }
 
     const employee = await this.prisma.employee.findFirst({
       where: {
@@ -433,15 +776,15 @@ export class HumanResourcesService {
         organizationId,
       },
       include: {
-        user: true,
+        user: { select: { id: true, username: true, firstName: true, lastName: true, email: true, phone: true, status: true } },
         branch: true,
         department: true,
-        leaveRequests: {
+        leaveRequests: canViewLeaves ? {
           include: {
-            reviewedBy: true,
+            reviewedBy: { select: { id: true, username: true, firstName: true, lastName: true, email: true, phone: true, status: true } },
             statusHistory: {
               include: {
-                actedBy: true,
+                actedBy: { select: { id: true, username: true, firstName: true, lastName: true, email: true, phone: true, status: true } },
               },
               orderBy: {
                 createdAt: 'desc',
@@ -451,7 +794,7 @@ export class HumanResourcesService {
           orderBy: {
             startAt: 'desc',
           },
-        },
+        } : false,
       },
     });
 
@@ -471,7 +814,8 @@ export class HumanResourcesService {
     user: CurrentAuthUser,
     dto: CreateEmployeeDto,
   ) {
-    const organizationId = this.getOrganizationId(user);
+    const { organizationId, canManageEmployees } = await this.getMembershipAccess(user);
+    if (!canManageEmployees) throw new ForbiddenException('مجوز مدیریت پرونده‌های کارکنان را ندارید.');
 
     // اعتبارسنجی اولیه شعبه، دپارتمان و کاربر در صورت ارسال
     if (!dto.createAccount && dto.userId) {
@@ -615,7 +959,7 @@ export class HumanResourcesService {
             notes: dto.notes ?? null,
           },
           include: {
-            user: true,
+            user: { select: { id: true, username: true, firstName: true, lastName: true, email: true, phone: true, status: true } },
             branch: true,
             department: true,
           },
@@ -634,7 +978,16 @@ export class HumanResourcesService {
     employeeId: string,
     dto: UpdateEmployeeDto,
   ) {
-    const organizationId = this.getOrganizationId(user);
+    const { organizationId, canManageEmployees, employeeId: ownEmployeeId } = await this.getMembershipAccess(user);
+    const isSelfService = !canManageEmployees && ownEmployeeId === employeeId;
+    if (!canManageEmployees && !isSelfService) throw new ForbiddenException('مجوز ویرایش پروندهٔ این کارمند را ندارید.');
+    if (isSelfService) {
+      const allowedFields = new Set(['phone', 'email', 'address', 'emergencyPhone']);
+      const requestedFields = Object.keys(dto).filter((key) => (dto as Record<string, unknown>)[key] !== undefined);
+      if (requestedFields.some((key) => !allowedFields.has(key))) {
+        throw new ForbiddenException('در خودخدمتی فقط اطلاعات تماس قابل ویرایش است.');
+      }
+    }
 
     const existingEmployee =
       await this.prisma.employee.findFirst({
@@ -764,7 +1117,7 @@ export class HumanResourcesService {
         },
         data,
         include: {
-          user: true,
+          user: { select: { id: true, username: true, firstName: true, lastName: true, email: true, phone: true, status: true } },
           branch: true,
           department: true,
         },
@@ -781,7 +1134,7 @@ export class HumanResourcesService {
     user: CurrentAuthUser,
     filters: LeaveRequestFilters = {},
   ) {
-    const organizationId = this.getOrganizationId(user);
+    const { organizationId, canViewLeaves, employeeId: ownEmployeeId } = await this.getMembershipAccess(user);
 
     const where: Prisma.LeaveRequestWhereInput = {
       organizationId,
@@ -789,6 +1142,10 @@ export class HumanResourcesService {
 
     if (filters.employeeId) {
       where.employeeId = filters.employeeId;
+    }
+    if (!canViewLeaves) {
+      if (!ownEmployeeId || (filters.employeeId && filters.employeeId !== ownEmployeeId)) return [];
+      where.employeeId = ownEmployeeId;
     }
 
     if (filters.status) {
@@ -808,10 +1165,10 @@ export class HumanResourcesService {
             department: true,
           },
         },
-        reviewedBy: true,
+        reviewedBy: { select: { id: true, username: true, firstName: true, lastName: true, email: true, phone: true, status: true } },
         statusHistory: {
           include: {
-            actedBy: true,
+            actedBy: { select: { id: true, username: true, firstName: true, lastName: true, email: true, phone: true, status: true } },
           },
           orderBy: {
             createdAt: 'desc',
@@ -831,7 +1188,7 @@ export class HumanResourcesService {
     user: CurrentAuthUser,
     leaveRequestId: string,
   ) {
-    const organizationId = this.getOrganizationId(user);
+    const { organizationId, canViewLeaves, employeeId: ownEmployeeId } = await this.getMembershipAccess(user);
 
     const leaveRequest =
       await this.prisma.leaveRequest.findFirst({
@@ -842,15 +1199,15 @@ export class HumanResourcesService {
         include: {
           employee: {
             include: {
-              user: true,
+              user: { select: { id: true, username: true, firstName: true, lastName: true, email: true, phone: true, status: true } },
               branch: true,
               department: true,
             },
           },
-          reviewedBy: true,
+          reviewedBy: { select: { id: true, username: true, firstName: true, lastName: true, email: true, phone: true, status: true } },
           statusHistory: {
             include: {
-              actedBy: true,
+              actedBy: { select: { id: true, username: true, firstName: true, lastName: true, email: true, phone: true, status: true } },
             },
             orderBy: {
               createdAt: 'desc',
@@ -865,6 +1222,10 @@ export class HumanResourcesService {
       );
     }
 
+    if (!canViewLeaves && leaveRequest.employeeId !== ownEmployeeId) {
+      throw new ForbiddenException('مجوز مشاهدهٔ این درخواست مرخصی را ندارید.');
+    }
+
     return leaveRequest;
   }
 
@@ -875,7 +1236,10 @@ export class HumanResourcesService {
     user: CurrentAuthUser,
     dto: CreateLeaveRequestDto,
   ) {
-    const organizationId = this.getOrganizationId(user);
+    const { organizationId, canManageLeaves, employeeId: ownEmployeeId } = await this.getMembershipAccess(user);
+    if (!canManageLeaves && (!ownEmployeeId || dto.employeeId !== ownEmployeeId)) {
+      throw new ForbiddenException('فقط می‌توانید برای خودتان درخواست مرخصی ثبت کنید.');
+    }
 
     const employee = await this.prisma.employee.findFirst({
       where: {
@@ -964,6 +1328,7 @@ export class HumanResourcesService {
                 startAt,
                 endAt,
                 durationMinutes,
+                reason: dto.reason?.trim() || null,
               },
             });
 
@@ -988,7 +1353,7 @@ export class HumanResourcesService {
               },
               statusHistory: {
                 include: {
-                  actedBy: true,
+                  actedBy: { select: { id: true, username: true, firstName: true, lastName: true, email: true, phone: true, status: true } },
                 },
                 orderBy: {
                   createdAt: 'desc',
@@ -1011,7 +1376,7 @@ export class HumanResourcesService {
     leaveRequestId: string,
     dto: UpdateLeaveRequestStatusDto,
   ) {
-    const organizationId = this.getOrganizationId(user);
+    const { organizationId, canManageLeaves, employeeId: ownEmployeeId } = await this.getMembershipAccess(user);
 
     const existingRequest =
       await this.prisma.leaveRequest.findFirst({
@@ -1022,6 +1387,7 @@ export class HumanResourcesService {
         select: {
           id: true,
           status: true,
+          employeeId: true,
         },
       });
 
@@ -1029,6 +1395,14 @@ export class HumanResourcesService {
       throw new NotFoundException(
         'درخواست مرخصی موردنظر پیدا نشد.',
       );
+    }
+
+    const isOwnCancellation = !canManageLeaves && existingRequest.employeeId === ownEmployeeId && dto.status === LeaveRequestStatus.CANCELLED;
+    if (!canManageLeaves && !isOwnCancellation) {
+      throw new ForbiddenException('برای بررسی یا تغییر وضعیت درخواست مرخصی مجوز ندارید.');
+    }
+    if (isOwnCancellation && existingRequest.status !== LeaveRequestStatus.PENDING) {
+      throw new BadRequestException('فقط درخواست در انتظار را می‌توانید لغو کنید.');
     }
 
     if (
@@ -1089,15 +1463,15 @@ export class HumanResourcesService {
             include: {
               employee: {
                 include: {
-                  user: true,
+              user: { select: { id: true, username: true, firstName: true, lastName: true, email: true, phone: true, status: true } },
                   branch: true,
                   department: true,
                 },
               },
-              reviewedBy: true,
+              reviewedBy: { select: { id: true, username: true, firstName: true, lastName: true, email: true, phone: true, status: true } },
               statusHistory: {
                 include: {
-                  actedBy: true,
+                  actedBy: { select: { id: true, username: true, firstName: true, lastName: true, email: true, phone: true, status: true } },
                 },
                 orderBy: {
                   createdAt: 'desc',

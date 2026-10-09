@@ -12,19 +12,19 @@ import {
 import * as bcrypt from 'bcrypt';
 
 import { PrismaService } from '../prisma/prisma.service';
-import { CreateOrganizationDto } from './dto/create-organization.dto';
-import { UpdateOrganizationSettingsDto } from './dto/update-organization-settings.dto';
-import { CreateBranchDto } from './dto/create-branch.dto';
-import { UpdateBranchDto } from './dto/update-branch.dto';
-import { CreateDepartmentDto } from './dto/create-department.dto';
-import { UpdateDepartmentDto } from './dto/update-department.dto';
+import { CreateOrganizationDto } from './company/dto/create-organization.dto';
+import { UpdateOrganizationSettingsDto } from './company/dto/update-organization-settings.dto';
+import { CreateBranchDto } from './organization/dto/create-branch.dto';
+import { UpdateBranchDto } from './organization/dto/update-branch.dto';
+import { CreateDepartmentDto } from './organization/dto/create-department.dto';
+import { UpdateDepartmentDto } from './organization/dto/update-department.dto';
 import {
   ImportDepartmentItemDto,
   ImportOrganizationDto,
-} from './dto/import-organization.dto';
-import { SaveRoleDto } from './dto/save-role.dto';
+} from './company/dto/import-organization.dto';
+import { SaveRoleDto } from './roles/dto/save-role.dto';
 import { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
-import { OrganizationLogoStorageService } from './organization-logo-storage.service';
+import { OrganizationLogoStorageService } from './company/organization-logo-storage.service';
 
 @Injectable()
 export class SettingsService {
@@ -420,7 +420,12 @@ export class SettingsService {
     });
   }
 
-  async getUsers(organizationId: string) {
+  async getUsers(organizationId: string, user: AuthenticatedUser) {
+    const access = await this.getOrganizationAccess(organizationId, user);
+    if (!access.canView) {
+      throw new ForbiddenException('مجوز مشاهده کاربران این سازمان را ندارید.');
+    }
+
     const users = await this.prisma.user.findMany({
       where: {
         memberships: {
@@ -473,7 +478,16 @@ export class SettingsService {
   /**
    * پیاده‌سازی متد saveUsers برای ذخیره/درون‌ریزی مطمئن کاربران با پشتیبانی از کلمه عبور و نام کاربری دلخواه
    */
-  async saveUsers(organizationId: string, users: any[]) {
+  async saveUsers(
+    organizationId: string,
+    users: any[],
+    user: AuthenticatedUser,
+  ) {
+    const access = await this.getOrganizationAccess(organizationId, user);
+    if (!access.canEdit) {
+      throw new ForbiddenException('مجوز ویرایش کاربران این سازمان را ندارید.');
+    }
+
     return this.prisma.$transaction(async (tx) => {
       const org = await tx.organization.findUnique({
         where: { id: organizationId },
@@ -630,7 +644,7 @@ export class SettingsService {
         }
       }
 
-      return this.getUsers(organizationId);
+      return this.getUsers(organizationId, user);
     });
   }
 
@@ -683,13 +697,23 @@ export class SettingsService {
     return updatedOrganization;
   }
 
-  async getBranches(organizationId: string) {
+  async getBranches(organizationId: string, user: AuthenticatedUser) {
+    const access = await this.getOrganizationAccess(organizationId, user);
+    if (!access.canView) {
+      throw new ForbiddenException('مجوز مشاهده ساختار سازمانی را ندارید.');
+    }
+
     return this.prisma.branch.findMany({
       where: { organizationId },
     });
   }
 
-  async createBranch(dto: CreateBranchDto) {
+  async createBranch(dto: CreateBranchDto, user: AuthenticatedUser) {
+    const access = await this.getOrganizationAccess(dto.organizationId, user);
+    if (!access.canEdit) {
+      throw new ForbiddenException('مجوز مدیریت ساختار سازمانی را ندارید.');
+    }
+
     const organization = await this.prisma.organization.findUnique({
       where: { id: dto.organizationId },
       select: { id: true },
@@ -725,7 +749,11 @@ export class SettingsService {
     });
   }
 
-  async updateBranch(id: string, dto: UpdateBranchDto) {
+  async updateBranch(
+    id: string,
+    dto: UpdateBranchDto,
+    user: AuthenticatedUser,
+  ) {
     const branch = await this.prisma.branch.findUnique({
       where: { id },
       select: { id: true, organizationId: true },
@@ -733,6 +761,11 @@ export class SettingsService {
 
     if (!branch) {
       throw new NotFoundException(`شعبه با شناسه ${id} یافت نشد.`);
+    }
+
+    const access = await this.getOrganizationAccess(branch.organizationId, user);
+    if (!access.canEdit) {
+      throw new ForbiddenException('مجوز مدیریت ساختار سازمانی را ندارید.');
     }
 
     return this.prisma.$transaction(async (tx) => {
@@ -763,14 +796,19 @@ export class SettingsService {
     });
   }
 
-  async deleteBranch(id: string) {
+  async deleteBranch(id: string, user: AuthenticatedUser) {
     const branch = await this.prisma.branch.findUnique({
       where: { id },
-      select: { id: true },
+      select: { id: true, organizationId: true },
     });
 
     if (!branch) {
       throw new NotFoundException(`شعبه با شناسه ${id} یافت نشد.`);
+    }
+
+    const access = await this.getOrganizationAccess(branch.organizationId, user);
+    if (!access.canEdit) {
+      throw new ForbiddenException('مجوز مدیریت ساختار سازمانی را ندارید.');
     }
 
     await this.prisma.$transaction([
@@ -786,14 +824,24 @@ export class SettingsService {
     return { message: 'شعبه با موفقیت حذف شد.', id };
   }
 
-  async getDepartments(organizationId: string) {
+  async getDepartments(organizationId: string, user: AuthenticatedUser) {
+    const access = await this.getOrganizationAccess(organizationId, user);
+    if (!access.canView) {
+      throw new ForbiddenException('مجوز مشاهده ساختار سازمانی را ندارید.');
+    }
+
     return this.prisma.department.findMany({
       where: { organizationId },
       include: { branch: true },
     });
   }
 
-  async createDepartment(dto: CreateDepartmentDto) {
+  async createDepartment(dto: CreateDepartmentDto, user: AuthenticatedUser) {
+    const access = await this.getOrganizationAccess(dto.organizationId, user);
+    if (!access.canEdit) {
+      throw new ForbiddenException('مجوز مدیریت ساختار سازمانی را ندارید.');
+    }
+
     const organization = await this.prisma.organization.findUnique({
       where: { id: dto.organizationId },
       select: { id: true },
@@ -829,7 +877,11 @@ export class SettingsService {
     });
   }
 
-  async updateDepartment(id: string, dto: UpdateDepartmentDto) {
+  async updateDepartment(
+    id: string,
+    dto: UpdateDepartmentDto,
+    user: AuthenticatedUser,
+  ) {
     const department = await this.prisma.department.findUnique({
       where: { id },
       select: { id: true, organizationId: true },
@@ -837,6 +889,11 @@ export class SettingsService {
 
     if (!department) {
       throw new NotFoundException(`دپارتمان با شناسه ${id} یافت نشد.`);
+    }
+
+    const access = await this.getOrganizationAccess(department.organizationId, user);
+    if (!access.canEdit) {
+      throw new ForbiddenException('مجوز مدیریت ساختار سازمانی را ندارید.');
     }
 
     if (dto.branchId !== undefined && dto.branchId !== null) {
@@ -866,14 +923,19 @@ export class SettingsService {
     });
   }
 
-  async deleteDepartment(id: string) {
+  async deleteDepartment(id: string, user: AuthenticatedUser) {
     const department = await this.prisma.department.findUnique({
       where: { id },
-      select: { id: true },
+      select: { id: true, organizationId: true },
     });
 
     if (!department) {
       throw new NotFoundException(`دپارتمان با شناسه ${id} یافت نشد.`);
+    }
+
+    const access = await this.getOrganizationAccess(department.organizationId, user);
+    if (!access.canEdit) {
+      throw new ForbiddenException('مجوز مدیریت ساختار سازمانی را ندارید.');
     }
 
     await this.prisma.department.delete({

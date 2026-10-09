@@ -31,6 +31,9 @@ import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { CreateLeaveRequestDto } from './dto/create-leave-request.dto';
 import { UpdateEmployeeDto } from './dto/update-employee.dto';
 import { UpdateLeaveRequestStatusDto } from './dto/update-leave-request-status.dto';
+import { SaveAttendanceDto } from './dto/save-attendance.dto';
+import { SavePayrollDto } from './dto/save-payroll.dto';
+import { UpdatePayrollStatusDto } from './dto/update-payroll-status.dto';
 import { HumanResourcesService } from './human-resources.service';
 
 type CurrentAuthUser = {
@@ -43,6 +46,55 @@ export class HumanResourcesController {
   constructor(
     private readonly humanResourcesService: HumanResourcesService,
   ) {}
+
+  @Get('access')
+  getAccess(@CurrentUser() user: CurrentAuthUser) {
+    return this.humanResourcesService.getAccess(user);
+  }
+
+  @Get('options')
+  getOptions(@CurrentUser() user: CurrentAuthUser) {
+    return this.humanResourcesService.getReferenceData(user);
+  }
+
+  @Get('attendance')
+  getAttendance(@CurrentUser() user: CurrentAuthUser, @Query('date') date?: string) {
+    return this.humanResourcesService.getAttendance(user, date);
+  }
+
+  @Post('attendance')
+  saveAttendance(@CurrentUser() user: CurrentAuthUser, @Body() dto: SaveAttendanceDto) {
+    return this.humanResourcesService.saveAttendance(user, dto);
+  }
+
+  @Post('attendance/check-in')
+  checkIn(@CurrentUser() user: CurrentAuthUser) {
+    return this.humanResourcesService.checkIn(user);
+  }
+
+  @Post('attendance/check-out')
+  checkOut(@CurrentUser() user: CurrentAuthUser) {
+    return this.humanResourcesService.checkOut(user);
+  }
+
+  @Get('payroll')
+  getPayroll(@CurrentUser() user: CurrentAuthUser, @Query('period') period?: string) {
+    return this.humanResourcesService.getPayroll(user, period);
+  }
+
+  @Post('payroll')
+  savePayroll(@CurrentUser() user: CurrentAuthUser, @Body() dto: SavePayrollDto) {
+    return this.humanResourcesService.savePayroll(user, dto);
+  }
+
+  @Patch('payroll/:id/status')
+  updatePayrollStatus(
+    @CurrentUser() user: CurrentAuthUser,
+    @Param('id') id: string,
+    @Body() dto: UpdatePayrollStatusDto,
+  ) {
+    return this.humanResourcesService.updatePayrollStatus(user, id, dto);
+  }
 
   @Get('dashboard')
   getDashboard(@CurrentUser() user: CurrentAuthUser) {

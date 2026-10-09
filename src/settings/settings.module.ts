@@ -5,9 +5,9 @@ import { Module } from '@nestjs/common';
 import { PrismaModule } from '../prisma/prisma.module';
 import { SettingsController } from './settings.controller';
 import { SettingsService } from './settings.service';
-import { OrganizationLogoStorageService } from './organization-logo-storage.service';
-import { DepartmentStructureController } from './department-structure.controller';
-import { DepartmentStructureService } from './department-structure.service';
+import { OrganizationLogoStorageService } from './company/organization-logo-storage.service';
+import { DepartmentStructureController } from './organization/department-structure.controller';
+import { DepartmentStructureService } from './organization/department-structure.service';
 
 @Module({
   imports: [PrismaModule],

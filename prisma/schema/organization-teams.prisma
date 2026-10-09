@@ -21,7 +21,7 @@ model DepartmentTeam {
 model DepartmentTeamMember {
   teamId     String
   employeeId String
-  assignedAt DateTime      @default(now())
+  assignedAt DateTime       @default(now())
   team       DepartmentTeam @relation(fields: [teamId], references: [id], onDelete: Cascade)
   employee   Employee       @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 

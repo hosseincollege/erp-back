@@ -7,6 +7,7 @@ import {
   HttpCode,
   HttpStatus,
   Post,
+  Put,
   Req,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -14,7 +15,11 @@ import {
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { UpdateUserPreferencesDto } from './dto/update-user-preferences.dto';
 import { Public } from './decorators/public.decorator';
+import type { Request } from 'express';
+
+type AuthenticatedRequest = Request & { user?: { id?: string } };
 
 @Controller('auth')
 export class AuthController {
@@ -44,7 +49,7 @@ export class AuthController {
   }
 
   @Get('me')
-  getMe(@Req() request: any) {
+  getMe(@Req() request: AuthenticatedRequest) {
     const userId = request.user?.id;
 
     if (!userId) {
@@ -52,5 +57,22 @@ export class AuthController {
     }
 
     return this.authService.getMe(userId);
+  }
+
+  @Get('preferences')
+  getPreferences(@Req() request: AuthenticatedRequest) {
+    const userId = request.user?.id;
+    if (!userId) throw new UnauthorizedException('کاربر احراز هویت نشده است');
+    return this.authService.getPreferences(userId);
+  }
+
+  @Put('preferences')
+  updatePreferences(
+    @Req() request: AuthenticatedRequest,
+    @Body() dto: UpdateUserPreferencesDto,
+  ) {
+    const userId = request.user?.id;
+    if (!userId) throw new UnauthorizedException('کاربر احراز هویت نشده است');
+    return this.authService.updatePreferences(userId, dto);
   }
 }

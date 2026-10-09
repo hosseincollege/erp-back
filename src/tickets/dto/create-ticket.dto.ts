@@ -20,6 +20,10 @@ import {
 export class CreateTicketDto {
   @IsString()
   @IsNotEmpty()
+  projectId: string;
+
+  @IsString()
+  @IsNotEmpty()
   subject: string;
 
   @IsString()
