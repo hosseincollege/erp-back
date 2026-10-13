@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 
-import { PrismaService } from '../prisma/prisma.service';
+import { PrismaService } from '../core/prisma/prisma.service';
 import { CreateOrganizationDto } from './company/dto/create-organization.dto';
 import { UpdateOrganizationSettingsDto } from './company/dto/update-organization-settings.dto';
 import { CreateBranchDto } from './organization/dto/create-branch.dto';

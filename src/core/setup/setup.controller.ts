@@ -2,7 +2,7 @@
 
 import { Controller, Get } from '@nestjs/common';
 import { Public } from '../auth/decorators/public.decorator';
-import { PrismaService } from '../../prisma/prisma.service';
+import { PrismaService } from '../prisma/prisma.service';
 
 @Controller('setup')
 export class SetupController {

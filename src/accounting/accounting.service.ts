@@ -27,7 +27,7 @@ import {
   Prisma,
 } from '@prisma/client';
 
-import { PrismaService } from '../prisma/prisma.service';
+import { PrismaService } from '../core/prisma/prisma.service';
 
 import { CreateInvoiceDto } from './dto/create-invoice.dto';
 import { RegisterInvoicePaymentDto } from './dto/register-invoice-payment.dto';

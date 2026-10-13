@@ -8,7 +8,7 @@ import {
 import { Prisma, type Employee } from '@prisma/client';
 
 import type { AuthenticatedUser } from '../../core/auth/strategies/jwt.strategy';
-import { PrismaService } from '../../prisma/prisma.service';
+import { PrismaService } from '../../core/prisma/prisma.service';
 import { SettingsService } from '../settings.service';
 import {
   CreateDepartmentTeamDto,

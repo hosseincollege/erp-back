@@ -1,7 +1,13 @@
 // Path: backend/src/supply/inventory.service.ts
 
-import { Injectable, BadRequestException } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+} from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
+import type { AuthenticatedUser } from '../core/auth/strategies/jwt.strategy';
+import { PrismaService } from '../core/prisma/prisma.service';
 import {
   CreateProductDto,
   CreateWarehouseDto,
@@ -14,7 +20,102 @@ import {
 export class InventoryService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async getSummary(organizationId: string) {
+  private async requireAccess(user: AuthenticatedUser, manage = false) {
+    if (!user?.organizationId) {
+      throw new ForbiddenException('کاربر به سازمان فعالی دسترسی ندارد.');
+    }
+    const membership = await this.prisma.organizationMember.findFirst({
+      where: {
+        organizationId: user.organizationId,
+        userId: user.id,
+        status: 'ACTIVE',
+        organization: { status: 'ACTIVE' },
+      },
+      select: {
+        organization: { select: { ownerId: true } },
+        roles: {
+          select: {
+            role: {
+              select: {
+                key: true,
+                permissions: {
+                  select: { permission: { select: { key: true } } },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!membership) {
+      throw new ForbiddenException('عضویت فعال سازمان لازم است.');
+    }
+
+    const isAdministrator =
+      membership.organization.ownerId === user.id ||
+      membership.roles.some(({ role }) =>
+        ['ADMIN', 'SUPER_ADMIN'].includes(role.key.toUpperCase()),
+      );
+    const permissionKeys = new Set(
+      membership.roles.flatMap(({ role }) =>
+        role.permissions.map(({ permission }) => permission.key),
+      ),
+    );
+    const allowed = manage
+      ? isAdministrator || permissionKeys.has('inventory.write')
+      : isAdministrator ||
+        permissionKeys.has('inventory.read') ||
+        permissionKeys.has('inventory.write');
+
+    if (!allowed) {
+      throw new ForbiddenException(
+        manage
+          ? 'مجوز مدیریت انبار را ندارید.'
+          : 'مجوز مشاهده انبار را ندارید.',
+      );
+    }
+    return user.organizationId;
+  }
+
+  private async assertOwnedReferences(
+    tx: Prisma.TransactionClient,
+    organizationId: string,
+    warehouseIds: string[],
+    productIds: string[],
+  ) {
+    const [warehouses, products] = await Promise.all([
+      warehouseIds.length
+        ? tx.warehouse.count({
+            where: {
+              id: { in: [...new Set(warehouseIds)] },
+              organizationId,
+              isActive: true,
+            },
+          })
+        : 0,
+      productIds.length
+        ? tx.product.count({
+            where: {
+              id: { in: [...new Set(productIds)] },
+              organizationId,
+              isActive: true,
+            },
+          })
+        : 0,
+    ]);
+
+    if (
+      warehouses !== new Set(warehouseIds).size ||
+      products !== new Set(productIds).size
+    ) {
+      throw new BadRequestException(
+        'کالا یا انبار انتخاب‌شده معتبر نیست یا به سازمان جاری تعلق ندارد.',
+      );
+    }
+  }
+
+  async getSummary(user: AuthenticatedUser) {
+    const organizationId = await this.requireAccess(user);
     const activeProducts = await this.prisma.product.count({
       where: { organizationId, isActive: true },
     });
@@ -59,7 +160,8 @@ export class InventoryService {
     };
   }
 
-  async getProducts(organizationId: string) {
+  async getProducts(user: AuthenticatedUser) {
+    const organizationId = await this.requireAccess(user);
     return this.prisma.product.findMany({
       where: { organizationId },
       include: { balances: { include: { warehouse: true } } },
@@ -67,7 +169,8 @@ export class InventoryService {
     });
   }
 
-  async createProduct(organizationId: string, dto: CreateProductDto) {
+  async createProduct(user: AuthenticatedUser, dto: CreateProductDto) {
+    const organizationId = await this.requireAccess(user, true);
     return this.prisma.product.create({
       data: {
         ...dto,
@@ -76,14 +179,16 @@ export class InventoryService {
     });
   }
 
-  async getWarehouses(organizationId: string) {
+  async getWarehouses(user: AuthenticatedUser) {
+    const organizationId = await this.requireAccess(user);
     return this.prisma.warehouse.findMany({
       where: { organizationId },
       orderBy: { createdAt: 'desc' },
     });
   }
 
-  async createWarehouse(organizationId: string, dto: CreateWarehouseDto) {
+  async createWarehouse(user: AuthenticatedUser, dto: CreateWarehouseDto) {
+    const organizationId = await this.requireAccess(user, true);
     return this.prisma.warehouse.create({
       data: {
         ...dto,
@@ -92,7 +197,8 @@ export class InventoryService {
     });
   }
 
-  async getBalances(organizationId: string) {
+  async getBalances(user: AuthenticatedUser) {
+    const organizationId = await this.requireAccess(user);
     return this.prisma.inventoryBalance.findMany({
       where: {
         warehouse: { organizationId },
@@ -104,7 +210,8 @@ export class InventoryService {
     });
   }
 
-  async getMovements(organizationId: string) {
+  async getMovements(user: AuthenticatedUser) {
+    const organizationId = await this.requireAccess(user);
     return this.prisma.inventoryMovement.findMany({
       where: { organizationId },
       include: {
@@ -117,8 +224,15 @@ export class InventoryService {
     });
   }
 
-  async createReceipt(organizationId: string, dto: CreateReceiptDto) {
+  async createReceipt(user: AuthenticatedUser, dto: CreateReceiptDto) {
+    const organizationId = await this.requireAccess(user, true);
     return this.prisma.$transaction(async (tx) => {
+      await this.assertOwnedReferences(
+        tx,
+        organizationId,
+        [dto.warehouseId],
+        dto.items.map((item) => item.productId),
+      );
       const movement = await tx.inventoryMovement.create({
         data: {
           organizationId,
@@ -158,19 +272,25 @@ export class InventoryService {
     });
   }
 
-  async createIssue(organizationId: string, dto: CreateIssueDto) {
+  async createIssue(user: AuthenticatedUser, dto: CreateIssueDto) {
+    const organizationId = await this.requireAccess(user, true);
     return this.prisma.$transaction(async (tx) => {
+      await this.assertOwnedReferences(
+        tx,
+        organizationId,
+        [dto.warehouseId],
+        dto.items.map((item) => item.productId),
+      );
       for (const item of dto.items) {
-        const balance = await tx.inventoryBalance.findUnique({
+        const result = await tx.inventoryBalance.updateMany({
           where: {
-            productId_warehouseId: {
-              productId: item.productId,
-              warehouseId: dto.warehouseId,
-            },
+            productId: item.productId,
+            warehouseId: dto.warehouseId,
+            quantity: { gte: item.quantity },
           },
+          data: { quantity: { decrement: item.quantity } },
         });
-
-        if (!balance || balance.quantity < item.quantity) {
+        if (result.count !== 1) {
           throw new BadRequestException(
             `موجودی کالا برای خروج کافی نیست (شناسه کالا: ${item.productId})`,
           );
@@ -193,41 +313,33 @@ export class InventoryService {
         },
       });
 
-      for (const item of dto.items) {
-        await tx.inventoryBalance.update({
-          where: {
-            productId_warehouseId: {
-              productId: item.productId,
-              warehouseId: dto.warehouseId,
-            },
-          },
-          data: {
-            quantity: { decrement: item.quantity },
-          },
-        });
-      }
-
       return movement;
     });
   }
 
-  async createTransfer(organizationId: string, dto: CreateTransferDto) {
+  async createTransfer(user: AuthenticatedUser, dto: CreateTransferDto) {
+    const organizationId = await this.requireAccess(user, true);
     if (dto.fromWarehouseId === dto.toWarehouseId) {
       throw new BadRequestException('انبار مبدا و مقصد نمی‌توانند یکسان باشند');
     }
 
     return this.prisma.$transaction(async (tx) => {
+      await this.assertOwnedReferences(
+        tx,
+        organizationId,
+        [dto.fromWarehouseId, dto.toWarehouseId],
+        dto.items.map((item) => item.productId),
+      );
       for (const item of dto.items) {
-        const balance = await tx.inventoryBalance.findUnique({
+        const result = await tx.inventoryBalance.updateMany({
           where: {
-            productId_warehouseId: {
-              productId: item.productId,
-              warehouseId: dto.fromWarehouseId,
-            },
+            productId: item.productId,
+            warehouseId: dto.fromWarehouseId,
+            quantity: { gte: item.quantity },
           },
+          data: { quantity: { decrement: item.quantity } },
         });
-
-        if (!balance || balance.quantity < item.quantity) {
+        if (result.count !== 1) {
           throw new BadRequestException(
             `موجودی در انبار مبدا کافی نیست (شناسه کالا: ${item.productId})`,
           );
@@ -252,19 +364,6 @@ export class InventoryService {
       });
 
       for (const item of dto.items) {
-        // کسر از مبدا
-        await tx.inventoryBalance.update({
-          where: {
-            productId_warehouseId: {
-              productId: item.productId,
-              warehouseId: dto.fromWarehouseId,
-            },
-          },
-          data: {
-            quantity: { decrement: item.quantity },
-          },
-        });
-
         // افزایش به مقصد
         await tx.inventoryBalance.upsert({
           where: {

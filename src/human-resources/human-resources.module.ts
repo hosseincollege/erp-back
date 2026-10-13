@@ -8,8 +8,8 @@
 
 import { Module } from '@nestjs/common';
 
-import { PrismaModule } from '../prisma/prisma.module';
-import { NotificationsModule } from '../core/notifications/notifications.module';
+import { PrismaModule } from '../core/prisma/prisma.module';
+import { NotificationsModule } from '../dashboard/notifications/notifications.module';
 import { HumanResourcesController } from './human-resources.controller';
 import { HumanResourcesService } from './human-resources.service';
 

@@ -8,7 +8,7 @@
 
 import { Module } from '@nestjs/common';
 
-import { PrismaModule } from '../prisma/prisma.module';
+import { PrismaModule } from '../core/prisma/prisma.module';
 import { AccountingController } from './accounting.controller';
 import { AccountingService } from './accounting.service';
 

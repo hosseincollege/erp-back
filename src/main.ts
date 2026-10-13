@@ -9,7 +9,7 @@ import { ExpressAdapter } from '@nestjs/platform-express';
 import express, { Express, Request, Response } from 'express';
 import { resolve } from 'node:path';
 
-import { AppModule } from './app.module';
+import { AppModule } from './core/app.module';
 
 const server: Express = express();
 server.use('/uploads', express.static(resolve(process.cwd(), 'uploads')));

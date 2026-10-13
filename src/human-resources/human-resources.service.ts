@@ -30,9 +30,9 @@ import {
   UserStatus,
 } from '@prisma/client';
 
-import { PrismaService } from '../prisma/prisma.service';
-import { NotificationsService } from '../core/notifications/notifications.service';
-import type { LocalizedNotificationText } from '../core/notifications/notifications.service';
+import { PrismaService } from '../core/prisma/prisma.service';
+import { NotificationsService } from '../dashboard/notifications/notifications.service';
+import type { LocalizedNotificationText } from '../dashboard/notifications/notifications.service';
 
 import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { CreateLeaveRequestDto } from './dto/create-leave-request.dto';

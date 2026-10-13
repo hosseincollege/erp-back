@@ -1,13 +1,6 @@
 // Path: backend/src/supply/inventory.controller.ts
 
-import {
-  Controller,
-  Get,
-  Post,
-  Body,
-  UseGuards,
-  Headers,
-} from '@nestjs/common';
+import { Controller, Get, Post, Body } from '@nestjs/common';
 import { InventoryService } from './inventory.service';
 import {
   CreateProductDto,
@@ -17,117 +10,84 @@ import {
   CreateTransferDto,
 } from './dto/inventory.dto';
 import { CurrentUser } from '../core/auth/decorators/current-user.decorator';
+import type { AuthenticatedUser } from '../core/auth/strategies/jwt.strategy';
 
 @Controller('inventory')
 export class InventoryController {
   constructor(private readonly inventoryService: InventoryService) {}
 
-  private resolveOrgId(user: any, headerOrgId?: string): string {
-    return user?.organizationId || headerOrgId || 'default-org';
-  }
-
   @Get('summary')
-  async getSummary(
-    @CurrentUser() user: any,
-    @Headers('x-organization-id') headerOrgId?: string,
-  ) {
-    const orgId = this.resolveOrgId(user, headerOrgId);
-    const data = await this.inventoryService.getSummary(orgId);
+  async getSummary(@CurrentUser() user: AuthenticatedUser) {
+    const data = await this.inventoryService.getSummary(user);
     return { success: true, data };
   }
 
   @Get('products')
-  async getProducts(
-    @CurrentUser() user: any,
-    @Headers('x-organization-id') headerOrgId?: string,
-  ) {
-    const orgId = this.resolveOrgId(user, headerOrgId);
-    const data = await this.inventoryService.getProducts(orgId);
+  async getProducts(@CurrentUser() user: AuthenticatedUser) {
+    const data = await this.inventoryService.getProducts(user);
     return { success: true, data };
   }
 
   @Post('products')
   async createProduct(
     @Body() dto: CreateProductDto,
-    @CurrentUser() user: any,
-    @Headers('x-organization-id') headerOrgId?: string,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    const orgId = this.resolveOrgId(user, headerOrgId);
-    const data = await this.inventoryService.createProduct(orgId, dto);
+    const data = await this.inventoryService.createProduct(user, dto);
     return { success: true, data };
   }
 
   @Get('warehouses')
-  async getWarehouses(
-    @CurrentUser() user: any,
-    @Headers('x-organization-id') headerOrgId?: string,
-  ) {
-    const orgId = this.resolveOrgId(user, headerOrgId);
-    const data = await this.inventoryService.getWarehouses(orgId);
+  async getWarehouses(@CurrentUser() user: AuthenticatedUser) {
+    const data = await this.inventoryService.getWarehouses(user);
     return { success: true, data };
   }
 
   @Post('warehouses')
   async createWarehouse(
     @Body() dto: CreateWarehouseDto,
-    @CurrentUser() user: any,
-    @Headers('x-organization-id') headerOrgId?: string,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    const orgId = this.resolveOrgId(user, headerOrgId);
-    const data = await this.inventoryService.createWarehouse(orgId, dto);
+    const data = await this.inventoryService.createWarehouse(user, dto);
     return { success: true, data };
   }
 
   @Get('balances')
-  async getBalances(
-    @CurrentUser() user: any,
-    @Headers('x-organization-id') headerOrgId?: string,
-  ) {
-    const orgId = this.resolveOrgId(user, headerOrgId);
-    const data = await this.inventoryService.getBalances(orgId);
+  async getBalances(@CurrentUser() user: AuthenticatedUser) {
+    const data = await this.inventoryService.getBalances(user);
     return { success: true, data };
   }
 
   @Get('movements')
-  async getMovements(
-    @CurrentUser() user: any,
-    @Headers('x-organization-id') headerOrgId?: string,
-  ) {
-    const orgId = this.resolveOrgId(user, headerOrgId);
-    const data = await this.inventoryService.getMovements(orgId);
+  async getMovements(@CurrentUser() user: AuthenticatedUser) {
+    const data = await this.inventoryService.getMovements(user);
     return { success: true, data };
   }
 
   @Post('receipts')
   async createReceipt(
     @Body() dto: CreateReceiptDto,
-    @CurrentUser() user: any,
-    @Headers('x-organization-id') headerOrgId?: string,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    const orgId = this.resolveOrgId(user, headerOrgId);
-    const data = await this.inventoryService.createReceipt(orgId, dto);
+    const data = await this.inventoryService.createReceipt(user, dto);
     return { success: true, data };
   }
 
   @Post('issues')
   async createIssue(
     @Body() dto: CreateIssueDto,
-    @CurrentUser() user: any,
-    @Headers('x-organization-id') headerOrgId?: string,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    const orgId = this.resolveOrgId(user, headerOrgId);
-    const data = await this.inventoryService.createIssue(orgId, dto);
+    const data = await this.inventoryService.createIssue(user, dto);
     return { success: true, data };
   }
 
   @Post('transfers')
   async createTransfer(
     @Body() dto: CreateTransferDto,
-    @CurrentUser() user: any,
-    @Headers('x-organization-id') headerOrgId?: string,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    const orgId = this.resolveOrgId(user, headerOrgId);
-    const data = await this.inventoryService.createTransfer(orgId, dto);
+    const data = await this.inventoryService.createTransfer(user, dto);
     return { success: true, data };
   }
 }

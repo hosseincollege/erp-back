@@ -2,7 +2,7 @@
 // این ماژول ارائه‌دهنده‌ها، کنترلر و وابستگی‌های مربوط به تنظیمات عمومی سیستم را پیکربندی می‌کند.
 
 import { Module } from '@nestjs/common';
-import { PrismaModule } from '../prisma/prisma.module';
+import { PrismaModule } from '../core/prisma/prisma.module';
 import { SettingsController } from './settings.controller';
 import { SettingsService } from './settings.service';
 import { OrganizationLogoStorageService } from './company/organization-logo-storage.service';

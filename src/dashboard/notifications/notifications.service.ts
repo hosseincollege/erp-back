@@ -1,7 +1,7 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { AuditAction, Prisma } from '@prisma/client';
-import { PrismaService } from '../../prisma/prisma.service';
-import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
+import { PrismaService } from '../../core/prisma/prisma.service';
+import type { AuthenticatedUser } from '../../core/auth/strategies/jwt.strategy';
 import { SystemService } from '../system/system.service';
 import type { CreateAnnouncementDto } from './dto/create-announcement.dto';
 
