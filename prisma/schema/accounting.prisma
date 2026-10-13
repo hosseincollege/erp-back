@@ -42,6 +42,71 @@ model AccountingInvoice {
   @@map("accounting_invoices")
 }
 
+model AccountingAccount {
+  id             String   @id @default(cuid())
+  organizationId String
+  code           String
+  name           String
+  type           AccountingAccountType
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  voucherLines   AccountingVoucherLine[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId, type])
+  @@map("accounting_accounts")
+}
+
+model AccountingVoucher {
+  id             String   @id @default(cuid())
+  organizationId String
+  createdById    String
+  number         String
+  date           DateTime
+  description    String
+  status         AccountingVoucherStatus @default(DRAFT)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy      User @relation("AccountingVoucherCreator", fields: [createdById], references: [id])
+  lines          AccountingVoucherLine[]
+
+  @@unique([organizationId, number])
+  @@index([organizationId, date])
+  @@index([organizationId, status])
+  @@map("accounting_vouchers")
+}
+
+model AccountingVoucherLine {
+  id          String   @id @default(cuid())
+  voucherId   String
+  accountId   String
+  description String?
+  debit       Decimal  @default(0) @db.Decimal(18, 2)
+  credit      Decimal  @default(0) @db.Decimal(18, 2)
+  voucher     AccountingVoucher @relation(fields: [voucherId], references: [id], onDelete: Cascade)
+  account     AccountingAccount @relation(fields: [accountId], references: [id])
+
+  @@index([voucherId])
+  @@index([accountId])
+  @@map("accounting_voucher_lines")
+}
+
+enum AccountingAccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  REVENUE
+  EXPENSE
+}
+
+enum AccountingVoucherStatus {
+  DRAFT
+  POSTED
+}
+
 model AccountingInvoiceLineItem {
   id          String            @id @default(cuid())
   invoiceId   String

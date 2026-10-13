@@ -15,6 +15,7 @@
 
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -31,6 +32,9 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateInvoiceDto } from './dto/create-invoice.dto';
 import { RegisterInvoicePaymentDto } from './dto/register-invoice-payment.dto';
 import { UpdateInvoiceStatusDto } from './dto/update-invoice-status.dto';
+import { CreateAccountDto } from './dto/create-account.dto';
+import { CreateVoucherDto } from './dto/create-voucher.dto';
+import { randomBytes } from 'node:crypto';
 
 type CurrentAuthUser = {
   id: string;
@@ -44,6 +48,7 @@ type InvoiceListQuery = {
   moduleType?: string;
   branchId?: string;
   departmentId?: string;
+  vendorOnly?: boolean;
 };
 
 
@@ -99,6 +104,111 @@ const invoiceInclude = {
 export class AccountingService {
   constructor(private readonly prisma: PrismaService) {}
 
+  async getAccounts(user: CurrentAuthUser) {
+    await this.requireView(user);
+    return this.prisma.accountingAccount.findMany({
+      where: { organizationId: user.organizationId }, orderBy: { code: 'asc' },
+    });
+  }
+
+  async createAccount(user: CurrentAuthUser, dto: CreateAccountDto) {
+    await this.requireManage(user);
+    return this.prisma.accountingAccount.create({ data: {
+      organizationId: user.organizationId, code: dto.code.trim(), name: dto.name.trim(),
+      type: dto.type, isActive: dto.isActive ?? true,
+    } });
+  }
+
+  async getVouchers(user: CurrentAuthUser) {
+    await this.requireView(user);
+    return this.prisma.accountingVoucher.findMany({
+      where: { organizationId: user.organizationId },
+      include: { lines: { include: { account: { select: { id: true, code: true, name: true } } } } },
+      orderBy: [{ date: 'desc' }, { createdAt: 'desc' }], take: 200,
+    });
+  }
+
+  async createVoucher(user: CurrentAuthUser, dto: CreateVoucherDto) {
+    await this.requireManage(user);
+    const accountIds = [...new Set(dto.lines.map((line) => line.accountId))];
+    const accounts = await this.prisma.accountingAccount.findMany({
+      where: { organizationId: user.organizationId, isActive: true, id: { in: accountIds } }, select: { id: true },
+    });
+    if (accounts.length !== accountIds.length) throw new BadRequestException('همه حساب‌های انتخاب‌شده فعال و متعلق به سازمان جاری نیستند.');
+    const number = `JV-${new Date().toISOString().slice(0, 10).replaceAll('-', '')}-${randomBytes(3).toString('hex').toUpperCase()}`;
+    return this.prisma.accountingVoucher.create({ data: {
+      organizationId: user.organizationId, createdById: user.id, number,
+      date: new Date(dto.date), description: dto.description.trim(),
+      lines: { create: dto.lines.map((line) => ({
+        accountId: line.accountId, description: line.description?.trim() || null,
+        debit: line.debit, credit: line.credit,
+      })) },
+    }, include: { lines: { include: { account: { select: { id: true, code: true, name: true } } } } } });
+  }
+
+  async postVoucher(user: CurrentAuthUser, id: string) {
+    await this.requireManage(user);
+    const voucher = await this.prisma.accountingVoucher.findFirst({
+      where: { id, organizationId: user.organizationId }, include: { lines: true },
+    });
+    if (!voucher) throw new NotFoundException('سند حسابداری یافت نشد.');
+    if (voucher.status !== 'DRAFT') throw new BadRequestException('این سند قبلاً ثبت نهایی شده است.');
+    const debitCents = voucher.lines.reduce((sum, line) => sum + Math.round(Number(line.debit) * 100), 0);
+    const creditCents = voucher.lines.reduce((sum, line) => sum + Math.round(Number(line.credit) * 100), 0);
+    if (voucher.lines.length < 2 || debitCents <= 0 || debitCents !== creditCents || voucher.lines.some((line) => (Number(line.debit) > 0) === (Number(line.credit) > 0))) {
+      throw new BadRequestException('برای ثبت نهایی، حداقل دو ردیف و توازن بدهکار و بستانکار لازم است.');
+    }
+    const posted = await this.prisma.accountingVoucher.updateMany({
+      where: { id, organizationId: user.organizationId, status: 'DRAFT' },
+      data: { status: 'POSTED' },
+    });
+    if (posted.count !== 1) throw new ConflictException('سند هم‌زمان توسط کاربر دیگری ثبت شده است.');
+    return this.prisma.accountingVoucher.findFirstOrThrow({
+      where: { id, organizationId: user.organizationId },
+      include: { lines: { include: { account: { select: { id: true, code: true, name: true } } } } },
+    });
+  }
+
+  async getLedger(user: CurrentAuthUser, accountId?: string) {
+    await this.requireView(user);
+    if (accountId) {
+      const account = await this.prisma.accountingAccount.findFirst({ where: { id: accountId, organizationId: user.organizationId } });
+      if (!account) throw new NotFoundException('حساب یافت نشد.');
+    }
+    return this.prisma.accountingVoucherLine.findMany({
+      where: { voucher: { organizationId: user.organizationId, status: 'POSTED' }, ...(accountId ? { accountId } : {}) },
+      include: { account: { select: { id: true, code: true, name: true, type: true } }, voucher: { select: { id: true, number: true, date: true, description: true } } },
+      orderBy: { voucher: { date: 'desc' } }, take: 500,
+    });
+  }
+
+  async getPayments(user: CurrentAuthUser) {
+    await this.requireView(user);
+    return this.prisma.accountingInvoicePayment.findMany({
+      where: { invoice: { organizationId: user.organizationId } },
+      include: { invoice: { select: { id: true, documentNumber: true, title: true, vendorName: true, currency: true } } },
+      orderBy: { paidAt: 'desc' }, take: 500,
+    });
+  }
+
+  async getTrialBalance(user: CurrentAuthUser) {
+    await this.requireView(user);
+    const [accounts, balances] = await Promise.all([
+      this.prisma.accountingAccount.findMany({ where: { organizationId: user.organizationId }, orderBy: { code: 'asc' } }),
+      this.prisma.accountingVoucherLine.groupBy({
+        by: ['accountId'],
+        where: { voucher: { organizationId: user.organizationId, status: 'POSTED' } },
+        _sum: { debit: true, credit: true },
+      }),
+    ]);
+    const byAccount = new Map(balances.map((balance) => [balance.accountId, balance._sum]));
+    const rows = accounts.map((account) => {
+      const balance = byAccount.get(account.id);
+      return { id: account.id, code: account.code, name: account.name, type: account.type, debit: Number(balance?.debit ?? 0), credit: Number(balance?.credit ?? 0) };
+    });
+    return { rows, debitTotal: rows.reduce((sum, row) => sum + row.debit, 0), creditTotal: rows.reduce((sum, row) => sum + row.credit, 0) };
+  }
+
   private async getMembershipAccess(user: CurrentAuthUser) {
     const membership = await this.prisma.organizationMember.findFirst({
       where: {
@@ -146,7 +256,7 @@ export class AccountingService {
       approved,
       rejected,
       overdue,
-      invoicesWithPayments,
+      fullyPaidInvoices,
     ] = await Promise.all([
       this.prisma.accountingInvoice.count({
         where: { organizationId: user.organizationId },
@@ -187,35 +297,17 @@ export class AccountingService {
           },
         },
       }),
-      this.prisma.accountingInvoice.findMany({
-        where: { organizationId: user.organizationId },
-        select: {
-          totalAmount: true,
-          payments: {
-            select: {
-              paidAmount: true,
-            },
-          },
-        },
+      this.prisma.accountingInvoice.count({
+        where: { organizationId: user.organizationId, status: AccountingInvoiceStatus.COMPLETED },
       }),
     ]);
-
-    const paid = invoicesWithPayments.filter((invoice) => {
-      const totalAmount = Number(invoice.totalAmount);
-      const paidAmount = invoice.payments.reduce(
-        (sum, payment) => sum + Number(payment.paidAmount),
-        0,
-      );
-
-      return paidAmount >= totalAmount && totalAmount > 0;
-    }).length;
 
     return {
       totalInvoices,
       pendingReview,
       approved,
       rejected,
-      paid,
+      paid: fullyPaidInvoices,
       overdue,
     };
   }
@@ -247,6 +339,10 @@ export class AccountingService {
 
     if (query.departmentId) {
       where.departmentId = query.departmentId;
+    }
+
+    if (query.vendorOnly) {
+      where.vendorName = { not: null };
     }
 
     if (query.search?.trim()) {
@@ -292,6 +388,9 @@ export class AccountingService {
     dto: CreateInvoiceDto,
   ) {
     await this.requireManage(user);
+    if (!dto.vendorName?.trim()) {
+      throw new BadRequestException('نام تأمین‌کننده الزامی است.');
+    }
     if (!dto.lineItems?.length) {
       throw new BadRequestException(
         'حداقل یک ردیف برای فاکتور لازم است.',

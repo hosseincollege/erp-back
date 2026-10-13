@@ -23,6 +23,8 @@ model Organization {
   createdAt          DateTime              @default(now())
   updatedAt          DateTime              @updatedAt
   accountingInvoices AccountingInvoice[]
+  accountingAccounts AccountingAccount[]
+  accountingVouchers AccountingVoucher[]
   auditLogs          AuditLog[]
   branches           Branch[]
   departments        Department[]

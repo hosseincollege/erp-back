@@ -29,6 +29,8 @@ import { AccountingService } from './accounting.service';
 import { CreateInvoiceDto } from './dto/create-invoice.dto';
 import { RegisterInvoicePaymentDto } from './dto/register-invoice-payment.dto';
 import { UpdateInvoiceStatusDto } from './dto/update-invoice-status.dto';
+import { CreateAccountDto } from './dto/create-account.dto';
+import { CreateVoucherDto } from './dto/create-voucher.dto';
 
 type CurrentAuthUser = {
   id: string;
@@ -44,6 +46,38 @@ export class AccountingController {
   @Get('access')
   getAccess(@CurrentUser() user: CurrentAuthUser) {
     return this.accountingService.getAccess(user);
+  }
+
+  @Get('accounts') getAccounts(@CurrentUser() user: CurrentAuthUser) {
+    return this.accountingService.getAccounts(user);
+  }
+
+  @Post('accounts') createAccount(@CurrentUser() user: CurrentAuthUser, @Body() dto: CreateAccountDto) {
+    return this.accountingService.createAccount(user, dto);
+  }
+
+  @Get('vouchers') getVouchers(@CurrentUser() user: CurrentAuthUser) {
+    return this.accountingService.getVouchers(user);
+  }
+
+  @Post('vouchers') createVoucher(@CurrentUser() user: CurrentAuthUser, @Body() dto: CreateVoucherDto) {
+    return this.accountingService.createVoucher(user, dto);
+  }
+
+  @Post('vouchers/:id/post') postVoucher(@CurrentUser() user: CurrentAuthUser, @Param('id') id: string) {
+    return this.accountingService.postVoucher(user, id);
+  }
+
+  @Get('ledger') getLedger(@CurrentUser() user: CurrentAuthUser, @Query('accountId') accountId?: string) {
+    return this.accountingService.getLedger(user, accountId);
+  }
+
+  @Get('payments') getPayments(@CurrentUser() user: CurrentAuthUser) {
+    return this.accountingService.getPayments(user);
+  }
+
+  @Get('reports/trial-balance') getTrialBalance(@CurrentUser() user: CurrentAuthUser) {
+    return this.accountingService.getTrialBalance(user);
   }
 
   /**
@@ -68,6 +102,7 @@ export class AccountingController {
     @Query('moduleType') moduleType?: string,
     @Query('branchId') branchId?: string,
     @Query('departmentId') departmentId?: string,
+    @Query('vendorOnly') vendorOnly?: string,
   ) {
     return this.accountingService.getInvoices(user, {
       search,
@@ -76,6 +111,7 @@ export class AccountingController {
       moduleType,
       branchId,
       departmentId,
+      vendorOnly: vendorOnly === 'true',
     });
   }
 
