@@ -43,6 +43,7 @@ model Organization {
   tickets            Ticket[]
   notifications      Notification[]
   announcements      Announcement[]
+  testDataRuns        DevelopmentTestDataRun[]
 
   @@index([installationId])
   @@index([status])
@@ -158,6 +159,21 @@ model Announcement {
 
   @@index([organizationId, isActive, isPinned, createdAt])
   @@map("announcements")
+}
+
+model DevelopmentTestDataRun {
+  id             String   @id @default(cuid())
+  organizationId String
+  appliedById    String
+  moduleKey      String   @db.VarChar(40)
+  recordCounts   Json
+  appliedAt      DateTime @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  appliedBy      User         @relation(fields: [appliedById], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, moduleKey])
+  @@index([appliedById, appliedAt])
+  @@map("development_test_data_runs")
 }
 
 enum OrganizationStatus {

@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../core/prisma/prisma.module';
-import { ReportsController } from './reports.controller';
-import { ReportsService } from './reports.service';
+import { StatisticsController } from './statistics.controller';
+import { StatisticsService } from './statistics.service';
 
 /**
  * Cross-module reporting endpoints, scoped to the authenticated organization
@@ -9,7 +9,7 @@ import { ReportsService } from './reports.service';
  */
 @Module({
   imports: [PrismaModule],
-  controllers: [ReportsController],
-  providers: [ReportsService],
+  controllers: [StatisticsController],
+  providers: [StatisticsService],
 })
-export class ReportsModule {}
+export class StatisticsModule {}

@@ -1,17 +1,17 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import { CurrentUser } from '../core/auth/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../core/auth/strategies/jwt.strategy';
-import { ReportsService } from './reports.service';
+import { StatisticsService } from './statistics.service';
 
-@Controller('reports')
-export class ReportsController {
-  constructor(private readonly reportsService: ReportsService) {}
+@Controller(['statistics', 'reports'])
+export class StatisticsController {
+  constructor(private readonly statisticsService: StatisticsService) {}
 
   @Get('overview')
   getOverview(
     @CurrentUser() user: AuthenticatedUser,
     @Query('period') period?: string,
   ) {
-    return this.reportsService.getOverview(user, period);
+    return this.statisticsService.getOverview(user, period);
   }
 }

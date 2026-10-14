@@ -6,7 +6,7 @@ import { PrismaService } from '../core/prisma/prisma.service';
 type ReportPeriod = 'THIS_MONTH' | 'LAST_QUARTER' | 'YEAR_TO_DATE';
 
 @Injectable()
-export class ReportsService {
+export class StatisticsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async getOverview(user: AuthenticatedUser, requestedPeriod?: string) {

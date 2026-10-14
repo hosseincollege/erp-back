@@ -34,6 +34,7 @@ model User {
   preferences               UserPreference?
   notifications             Notification[]
   createdAnnouncements      Announcement[]                   @relation("AnnouncementCreator")
+  developmentTestDataRuns   DevelopmentTestDataRun[]
 
   @@index([status])
   @@index([lastLoginAt])

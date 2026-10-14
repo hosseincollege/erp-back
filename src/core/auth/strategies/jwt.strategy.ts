@@ -14,6 +14,8 @@ export type JwtPayload = {
   sub: string;
   username?: string;
   organizationId?: string;
+  impersonatedBy?: string;
+  impersonationOrganizationId?: string;
   iat?: number;
   exp?: number;
 };
@@ -27,6 +29,8 @@ export type AuthenticatedUser = {
   status: string;
   isSystemUser: boolean;
   organizationId: string | null;
+  impersonatedBy?: string;
+  impersonationOrganizationId?: string;
 };
 
 @Injectable()
@@ -108,6 +112,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       status: user.status,
       isSystemUser: user.isSystemUser,
       organizationId,
+      impersonatedBy: payload.impersonatedBy,
+      impersonationOrganizationId: payload.impersonationOrganizationId,
     };
   }
 }

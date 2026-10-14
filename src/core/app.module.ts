@@ -10,10 +10,11 @@ import { AppService } from './app.service';
 import { CommerceModule } from '../commerce/commerce.module';
 import { AuthModule } from './auth/auth.module';
 import { DashboardModule } from '../dashboard/dashboard.module';
+import { DevelopmentModule } from '../development/development.module';
 import { HumanResourcesModule } from '../human-resources/human-resources.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { SetupModule } from './setup/setup.module';
-import { ReportsModule } from '../reports/reports.module';
+import { StatisticsModule } from '../statistics/statistics.module';
 import { SettingsModule } from '../settings/settings.module';
 import { SupplyModule } from '../supply/supply.module';
 import { SupportModule } from '../support/support.module';
@@ -31,10 +32,11 @@ import { SupportModule } from '../support/support.module';
     CommerceModule,
     HumanResourcesModule,
     SupplyModule,
-    ReportsModule,
+    StatisticsModule,
     SettingsModule,
     SupportModule,
     DashboardModule,
+    DevelopmentModule,
   ],
   controllers: [AppController],
   providers: [AppService],
