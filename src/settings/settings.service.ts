@@ -14,6 +14,7 @@ import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../core/prisma/prisma.service';
 import { CreateOrganizationDto } from './company/dto/create-organization.dto';
 import { UpdateOrganizationSettingsDto } from './company/dto/update-organization-settings.dto';
+import { UpdateOrganizationAppearanceDto } from './company/dto/update-organization-appearance.dto';
 import { CreateBranchDto } from './organization/dto/create-branch.dto';
 import { UpdateBranchDto } from './organization/dto/update-branch.dto';
 import { CreateDepartmentDto } from './organization/dto/create-department.dto';
@@ -269,6 +270,60 @@ export class SettingsService {
     const canView = canEdit || permissions.has('settings.read');
 
     return { canView, canEdit };
+  }
+
+  async getOrganizationAppearance(id: string, user: AuthenticatedUser) {
+    const access = await this.getOrganizationAccess(id, user);
+    if (!access.canView) {
+      throw new ForbiddenException('مجوز مشاهده تنظیمات این سازمان را ندارید.');
+    }
+
+    const settings = await this.prisma.organizationSettings.upsert({
+      where: { organizationId: id },
+      create: { organizationId: id },
+      update: {},
+      select: {
+        accentPreset: true,
+        accentLightColor: true,
+        accentDarkColor: true,
+        backgroundStyle: true,
+        timezone: true,
+        calendar: true,
+      },
+    });
+
+    return { ...settings, canEdit: access.canEdit };
+  }
+
+  async updateOrganizationAppearance(
+    id: string,
+    dto: UpdateOrganizationAppearanceDto,
+    user: AuthenticatedUser,
+  ) {
+    const access = await this.getOrganizationAccess(id, user);
+    if (!access.canEdit) {
+      throw new ForbiddenException('مجوز ویرایش تنظیمات این سازمان را ندارید.');
+    }
+
+    try {
+      new Intl.DateTimeFormat('en-US', { timeZone: dto.timezone });
+    } catch {
+      throw new BadRequestException('منطقه زمانی معتبر نیست.');
+    }
+
+    return this.prisma.organizationSettings.upsert({
+      where: { organizationId: id },
+      create: { organizationId: id, ...dto },
+      update: dto,
+      select: {
+        accentPreset: true,
+        accentLightColor: true,
+        accentDarkColor: true,
+        backgroundStyle: true,
+        timezone: true,
+        calendar: true,
+      },
+    });
   }
 
   async getOrganizationBranding(id: string, user: AuthenticatedUser) {

@@ -15,6 +15,20 @@ const departments = [
 ] as const;
 
 export async function seedSettings(ctx: TestDataContext): Promise<TestDataCounts> {
+  await ctx.db.organizationSettings.upsert({
+    where: { organizationId: ctx.organizationId },
+    create: {
+      organizationId: ctx.organizationId,
+      accentPreset: 'blue',
+      accentLightColor: '#2563eb',
+      accentDarkColor: '#1d4ed8',
+      backgroundStyle: 'THEME',
+      calendar: 'persian',
+      timezone: 'Asia/Tehran',
+    },
+    update: {},
+  });
+
   const savedBranches = [] as Array<{ id: string }>;
   for (const [code, name, address] of branches) {
     savedBranches.push(await ctx.db.branch.upsert({
@@ -53,5 +67,5 @@ export async function seedSettings(ctx: TestDataContext): Promise<TestDataCounts
       isActive: true,
     } });
   }
-  return { branches: branches.length, departments: departments.length, announcements: announcements.length };
+  return { organizationSettings: 1, branches: branches.length, departments: departments.length, announcements: announcements.length };
 }

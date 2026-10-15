@@ -28,6 +28,7 @@ import { SettingsService } from './settings.service';
 
 import { CreateOrganizationDto } from './company/dto/create-organization.dto';
 import { UpdateOrganizationSettingsDto } from './company/dto/update-organization-settings.dto';
+import { UpdateOrganizationAppearanceDto } from './company/dto/update-organization-appearance.dto';
 
 import { CreateBranchDto } from './organization/dto/create-branch.dto';
 import { UpdateBranchDto } from './organization/dto/update-branch.dto';
@@ -118,6 +119,33 @@ export class SettingsController {
       throw new BadRequestException('شناسه سازمان نامعتبر است.');
     }
     return this.settingsService.getOrganizationAccess(id.trim(), user);
+  }
+
+  @Get('organization/:id/appearance')
+  async getOrganizationAppearance(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    if (!id || id.trim() === '') {
+      throw new BadRequestException('شناسه سازمان نامعتبر است.');
+    }
+    return this.settingsService.getOrganizationAppearance(id.trim(), user);
+  }
+
+  @Put('organization/:id/appearance')
+  async updateOrganizationAppearance(
+    @Param('id') id: string,
+    @Body() dto: UpdateOrganizationAppearanceDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    if (!id || id.trim() === '') {
+      throw new BadRequestException('شناسه سازمان نامعتبر است.');
+    }
+    return this.settingsService.updateOrganizationAppearance(
+      id.trim(),
+      dto,
+      user,
+    );
   }
 
   @Get('organization/:id/branding')

@@ -1,4 +1,4 @@
-import { IsIn, IsString, Matches } from 'class-validator';
+import { IsIn, IsString } from 'class-validator';
 
 const supportedLocales = [
   'fa',
@@ -13,16 +13,11 @@ const supportedLocales = [
   'pt-BR',
 ];
 const contrastLevels = ['soft', 'balanced', 'strong'];
-const calendarSystems = ['persian', 'islamic', 'gregorian'];
 
 export class UpdateUserPreferencesDto {
   @IsString()
   @IsIn(supportedLocales)
   locale: string;
-
-  @IsString()
-  @Matches(/^(blue|green|red|amber|violet|#[0-9a-fA-F]{6})$/)
-  accentColor: string;
 
   @IsString()
   @IsIn(contrastLevels)
@@ -31,8 +26,4 @@ export class UpdateUserPreferencesDto {
   @IsString()
   @IsIn(contrastLevels)
   darkContrast: string;
-
-  @IsString()
-  @IsIn(calendarSystems)
-  calendar: string;
 }

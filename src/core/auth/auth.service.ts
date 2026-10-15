@@ -193,10 +193,8 @@ export class AuthService {
       update: {},
       select: {
         locale: true,
-        accentColor: true,
         lightContrast: true,
         darkContrast: true,
-        calendar: true,
       },
     });
   }
@@ -208,10 +206,8 @@ export class AuthService {
       update: dto,
       select: {
         locale: true,
-        accentColor: true,
         lightContrast: true,
         darkContrast: true,
-        calendar: true,
       },
     });
   }
