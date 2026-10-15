@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   Logger,
@@ -19,6 +20,69 @@ export class DevelopmentService {
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
   ) {}
+
+  private siteVisitsAvailable() {
+    return process.env.VERCEL === '1' && process.env.VERCEL_ENV !== 'development';
+  }
+
+  async getSiteVisits(actor: AuthenticatedUser, rangeValue = '7d', pageValue = '1', search = '') {
+    await this.requireAdministrator(actor);
+    if (!this.siteVisitsAvailable()) return { available: false, summary: null, visitors: [], page: 1, pageSize: 25, totalVisitors: 0 };
+    const ranges = { '7d': 7, '30d': 30, '90d': 90 } as const;
+    if (rangeValue !== 'all' && !(rangeValue in ranges)) throw new BadRequestException('بازه زمانی معتبر نیست.');
+    const page = Math.max(1, Math.min(10000, Number.parseInt(pageValue, 10) || 1));
+    const since = rangeValue === 'all' ? undefined : new Date(Date.now() - ranges[rangeValue as keyof typeof ranges] * 86400000);
+    const where = { ...(since ? { startedAt: { gte: since } } : {}), ...(search.trim() ? { ipAddress: { contains: search.trim().slice(0, 100) } } : {}) };
+    const onlineSince = new Date(Date.now() - 5 * 60_000);
+    const [groups, totalGroups, sessionCount, pageViewCount, activeIpGroups] = await Promise.all([
+      this.prisma.visitorSession.groupBy({ by: ['ipAddress'], where, _count: { _all: true }, _max: { lastSeenAt: true }, orderBy: { _max: { lastSeenAt: 'desc' } }, skip: (page - 1) * 25, take: 25 }),
+      this.prisma.visitorSession.groupBy({ by: ['ipAddress'], where, _count: { _all: true }, orderBy: { _max: { lastSeenAt: 'desc' } }, take: 100000 }),
+      this.prisma.visitorSession.count({ where }),
+      this.prisma.visitorPageView.count({ where: { session: where } }),
+      this.prisma.visitorSession.groupBy({ by: ['ipAddress'], where: { ...where, lastSeenAt: { gte: onlineSince } }, _count: { _all: true }, orderBy: { _max: { lastSeenAt: 'desc' } }, take: 100000 }),
+    ]);
+    const ips = groups.map((group) => group.ipAddress);
+    const sessions = ips.length ? await this.prisma.visitorSession.findMany({ where: { ...where, ipAddress: { in: ips } }, select: { id: true, ipAddress: true, lastSeenAt: true }, take: 20000 }) : [];
+    const sessionIds = sessions.map(({ id }) => id);
+    const pages = sessionIds.length ? await this.prisma.visitorPageView.findMany({ where: { sessionId: { in: sessionIds } }, select: { sessionId: true, moduleKey: true, durationSeconds: true } }) : [];
+    const pageStats = new Map<string, { count: number; seconds: number; modules: Set<string> }>();
+    for (const view of pages) {
+      const stat = pageStats.get(view.sessionId) ?? { count: 0, seconds: 0, modules: new Set<string>() };
+      stat.count += 1; stat.seconds += view.durationSeconds; stat.modules.add(view.moduleKey); pageStats.set(view.sessionId, stat);
+    }
+    const sessionStats = new Map<string, { visits: number; pageViews: number; seconds: number; modules: Set<string> }>();
+    for (const session of sessions) {
+      const stat = sessionStats.get(session.ipAddress) ?? { visits: 0, pageViews: 0, seconds: 0, modules: new Set<string>() };
+      const pageStat = pageStats.get(session.id);
+      stat.visits += 1; stat.pageViews += pageStat?.count ?? 0; stat.seconds += pageStat?.seconds ?? 0;
+      pageStat?.modules.forEach((module) => stat.modules.add(module));
+      sessionStats.set(session.ipAddress, stat);
+    }
+    return {
+      available: true,
+      summary: { onlineVisitors: activeIpGroups.length, uniqueIps: totalGroups.length, sessions: sessionCount, pageViews: pageViewCount },
+      visitors: groups.map((group) => {
+        const stat = sessionStats.get(group.ipAddress);
+        const latest = group._max.lastSeenAt;
+        return { ipAddress: group.ipAddress, visits: group._count._all, pageViews: stat?.pageViews ?? 0, durationSeconds: stat?.seconds ?? 0, modules: [...(stat?.modules ?? [])], lastSeenAt: latest?.toISOString() ?? null, online: Boolean(latest && latest.getTime() >= Date.now() - 5 * 60_000) };
+      }),
+      page, pageSize: 25, totalVisitors: totalGroups.length,
+    };
+  }
+
+  async getSiteVisitorDetails(actor: AuthenticatedUser, ipAddress: string, rangeValue = '7d') {
+    await this.requireAdministrator(actor);
+    if (!this.siteVisitsAvailable()) return { available: false, sessions: [] };
+    const ranges = { '7d': 7, '30d': 30, '90d': 90 } as const;
+    if (rangeValue !== 'all' && !(rangeValue in ranges)) throw new BadRequestException('بازه زمانی معتبر نیست.');
+    const since = rangeValue === 'all' ? undefined : new Date(Date.now() - ranges[rangeValue as keyof typeof ranges] * 86400000);
+    const sessions = await this.prisma.visitorSession.findMany({
+      where: { ipAddress: ipAddress.slice(0, 100), ...(since ? { startedAt: { gte: since } } : {}) },
+      orderBy: { startedAt: 'desc' }, take: 500,
+      select: { id: true, startedAt: true, lastSeenAt: true, endedAt: true, pageViews: { orderBy: { enteredAt: 'asc' }, select: { path: true, moduleKey: true, enteredAt: true, leftAt: true, durationSeconds: true } } },
+    });
+    return { available: true, sessions: sessions.map((session) => ({ ...session, startedAt: session.startedAt.toISOString(), lastSeenAt: session.lastSeenAt.toISOString(), endedAt: session.endedAt?.toISOString() ?? null, pageViews: session.pageViews.map((view) => ({ ...view, enteredAt: view.enteredAt.toISOString(), leftAt: view.leftAt?.toISOString() ?? null })) })) };
+  }
 
   async getTestDataStatus(actor: AuthenticatedUser) {
     const { organizationId } = await this.requireAdministrator(actor);

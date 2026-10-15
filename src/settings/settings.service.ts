@@ -26,6 +26,32 @@ import { SaveRoleDto } from './roles/dto/save-role.dto';
 import { AuthenticatedUser } from '../core/auth/strategies/jwt.strategy';
 import { OrganizationLogoStorageService } from './company/organization-logo-storage.service';
 
+const VISITOR_TIME_ZONE = 'Asia/Tehran';
+
+function zonedDateParts(date: Date) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: VISITOR_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(date);
+  const value = (type: Intl.DateTimeFormatPartTypes) =>
+    Number(parts.find((part) => part.type === type)?.value);
+  return { year: value('year'), month: value('month'), day: value('day'), hour: value('hour'), minute: value('minute'), second: value('second') };
+}
+
+function startOfZonedDay(year: number, month: number, day: number, reference: Date) {
+  const localNow = zonedDateParts(reference);
+  const localNowAsUtc = Date.UTC(localNow.year, localNow.month - 1, localNow.day, localNow.hour, localNow.minute, localNow.second);
+  const referenceToSecond = Math.floor(reference.getTime() / 1000) * 1000;
+  const zoneOffset = localNowAsUtc - referenceToSecond;
+  return new Date(Date.UTC(year, month - 1, day) - zoneOffset);
+}
+
 @Injectable()
 export class SettingsService {
   constructor(
@@ -33,65 +59,95 @@ export class SettingsService {
     private readonly logoStorage: OrganizationLogoStorageService,
   ) {}
 
-  /**
-   * دریافت آمار بازدید یکتا بر اساس IP برای امروز، ماه جاری و سال جاری
-   */
+  /** آمار بازدیدکنندگان بر اساس روزهای تقویمی تهران و حضور در پنج دقیقه اخیر. */
   async getPublicStats() {
-    try {
-      const now = new Date();
-      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-      const yearStart = new Date(now.getFullYear(), 0, 1);
+    if (!this.isVercelRuntime()) return { enabled: false, daily: 0, weekly: 0, monthly: 0, yearly: 0, online: 0, today: 0, week: 0, month: 0, year: 0 };
+    const now = new Date();
+    const { year, month, day } = zonedDateParts(now);
+    const todayStart = startOfZonedDay(year, month, day, now);
+    const weekday = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+    const daysSinceSaturday = (weekday + 1) % 7;
+    const saturday = new Date(Date.UTC(year, month - 1, day - daysSinceSaturday));
+    const weekStart = startOfZonedDay(saturday.getUTCFullYear(), saturday.getUTCMonth() + 1, saturday.getUTCDate(), now);
+    const monthStart = startOfZonedDay(year, month, 1, now);
+    const yearStart = startOfZonedDay(year, 1, 1, now);
+    const onlineSince = new Date(now.getTime() - 5 * 60 * 1000);
 
-      if ((this.prisma as any).visit) {
-        const [todayVisits, monthVisits, yearVisits] = await Promise.all([
-          (this.prisma as any).visit.findMany({
-            where: { createdAt: { gte: todayStart } },
-            distinct: ['ipAddress'],
-            select: { ipAddress: true },
-          }),
-          (this.prisma as any).visit.findMany({
-            where: { createdAt: { gte: monthStart } },
-            distinct: ['ipAddress'],
-            select: { ipAddress: true },
-          }),
-          (this.prisma as any).visit.findMany({
-            where: { createdAt: { gte: yearStart } },
-            distinct: ['ipAddress'],
-            select: { ipAddress: true },
-          }),
-        ]);
+    const countUniqueVisitorsSince = async (since: Date) => {
+      const visitors = await this.prisma.visit.findMany({
+        where: { createdAt: { gte: since } },
+        distinct: ['ipAddress'],
+        select: { ipAddress: true },
+      });
+      return visitors.length;
+    };
 
-        return {
-          today: todayVisits.length,
-          month: monthVisits.length,
-          year: yearVisits.length,
-        };
-      }
+    const [daily, weekly, monthly, yearly, online] = await Promise.all([
+      countUniqueVisitorsSince(todayStart),
+      countUniqueVisitorsSince(weekStart),
+      countUniqueVisitorsSince(monthStart),
+      countUniqueVisitorsSince(yearStart),
+      this.prisma.visitorPresence.count({ where: { lastSeenAt: { gte: onlineSince } } }),
+    ]);
 
-      return { today: 1, month: 1, year: 1 };
-    } catch {
-      return { today: 0, month: 0, year: 0 };
-    }
+    return { enabled: true, daily, weekly, monthly, yearly, online, today: daily, week: weekly, month: monthly, year: yearly };
+  }
+
+  private isVercelRuntime() {
+    return process.env.VERCEL === '1' && process.env.VERCEL_ENV !== 'development';
   }
 
   /**
    * ثبت بازدید کاربر با IP
    */
   async trackVisit(ipAddress: string, userAgent?: string) {
-    try {
-      if ((this.prisma as any).visit) {
-        await (this.prisma as any).visit.create({
-          data: {
-            ipAddress,
-            userAgent: userAgent ? userAgent.slice(0, 500) : null,
-          },
-        });
-      }
-      return { success: true };
-    } catch {
-      return { success: false };
+    if (!this.isVercelRuntime()) return { success: true, enabled: false };
+    await this.prisma.visit.create({
+      data: {
+        ipAddress: ipAddress.slice(0, 100),
+        userAgent: userAgent ? userAgent.slice(0, 500) : null,
+      },
+    });
+    return { success: true };
+  }
+
+  async trackVisitorPresence(visitorId: string, userAgent: string | undefined, ipAddress: string, input?: { sessionId?: string; pageViewId?: string; path?: string; event?: 'ENTER' | 'HEARTBEAT' | 'EXIT' }) {
+    if (!this.isVercelRuntime()) return { success: true, enabled: false };
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(visitorId)) {
+      throw new BadRequestException('شناسه بازدیدکننده معتبر نیست.');
     }
+    await this.prisma.visitorPresence.upsert({
+      where: { visitorId },
+      create: { visitorId, userAgent: userAgent?.slice(0, 500) ?? null },
+      update: { lastSeenAt: new Date(), userAgent: userAgent?.slice(0, 500) ?? null },
+    });
+
+    if (input?.sessionId && input.pageViewId && input.path && input.event) {
+      const sessionId = input.sessionId;
+      const pageViewId = input.pageViewId;
+      const path = input.path.slice(0, 500);
+      const moduleKey = path.split('/').filter(Boolean)[0] || 'home';
+      const now = new Date();
+      await this.prisma.visitorSession.upsert({
+        where: { id: sessionId },
+        create: { id: sessionId, ipAddress: ipAddress.slice(0, 100), userAgent: userAgent?.slice(0, 500) ?? null, startedAt: now, lastSeenAt: now },
+        update: { lastSeenAt: now, userAgent: userAgent?.slice(0, 500) ?? null, endedAt: input.event === 'EXIT' ? now : null },
+      });
+      if (input.event === 'ENTER') {
+        await this.prisma.visitorPageView.upsert({
+          where: { id: pageViewId },
+          create: { id: pageViewId, sessionId, path, moduleKey, enteredAt: now, lastSeenAt: now },
+          update: {},
+        });
+      } else {
+        const current = await this.prisma.visitorPageView.findUnique({ where: { id: pageViewId }, select: { lastSeenAt: true } });
+        if (current) {
+          const seconds = Math.max(0, Math.min(60, Math.floor((now.getTime() - current.lastSeenAt.getTime()) / 1000)));
+          await this.prisma.visitorPageView.update({ where: { id: pageViewId }, data: { lastSeenAt: now, durationSeconds: { increment: seconds }, ...(input.event === 'EXIT' ? { leftAt: now } : {}) } });
+        }
+      }
+    }
+    return { success: true };
   }
 
   async createOrganization(dto: CreateOrganizationDto, user: AuthenticatedUser) {

@@ -6,6 +6,7 @@ import {
   Controller,
   Delete,
   Get,
+  Header,
   Param,
   Post,
   Put,
@@ -47,6 +48,7 @@ export class SettingsController {
    */
   @Public()
   @Get('public-stats')
+  @Header('Cache-Control', 'no-store, max-age=0')
   async getPublicStats() {
     return this.settingsService.getPublicStats();
   }
@@ -57,7 +59,7 @@ export class SettingsController {
   @Public()
   @Post('public-track')
   async trackPublicVisit(@Req() req: Request) {
-    const forwarded = req.headers['x-forwarded-for'];
+    const forwarded = req.headers['x-vercel-forwarded-for'] || req.headers['x-forwarded-for'];
     const ip =
       (typeof forwarded === 'string' ? forwarded.split(',')[0] : null) ||
       req.socket.remoteAddress ||
@@ -65,6 +67,27 @@ export class SettingsController {
 
     const userAgent = (req.headers['user-agent'] as string) || undefined;
     return this.settingsService.trackVisit(ip.trim(), userAgent);
+  }
+
+  @Public()
+  @Post('public-presence')
+  async trackPublicPresence(
+    @Body() body: { visitorId?: string; sessionId?: string; pageViewId?: string; path?: string; event?: 'ENTER' | 'HEARTBEAT' | 'EXIT' },
+    @Req() req: Request,
+  ) {
+    if (!body.visitorId) {
+      throw new BadRequestException('شناسه بازدیدکننده الزامی است.');
+    }
+    if (body.path && (!body.path.startsWith('/') || body.path.length > 500)) throw new BadRequestException('مسیر صفحه معتبر نیست.');
+    if (body.event && !['ENTER', 'HEARTBEAT', 'EXIT'].includes(body.event)) throw new BadRequestException('نوع رویداد معتبر نیست.');
+    const forwarded = req.headers['x-vercel-forwarded-for'] || req.headers['x-forwarded-for'];
+    const ip = (typeof forwarded === 'string' ? forwarded.split(',')[0] : null) || req.socket.remoteAddress || 'unknown';
+    return this.settingsService.trackVisitorPresence(
+      body.visitorId,
+      (req.headers['user-agent'] as string) || undefined,
+      ip.trim(),
+      body,
+    );
   }
 
   @Post('organization')
