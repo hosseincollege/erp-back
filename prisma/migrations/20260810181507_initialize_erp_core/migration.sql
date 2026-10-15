@@ -36,7 +36,7 @@ CREATE TYPE "AuditAction" AS ENUM ('CREATE', 'UPDATE', 'DELETE', 'LOGIN', 'LOGOU
 BEGIN;
 CREATE TYPE "TicketStatus_new" AS ENUM ('OPEN', 'IN_PROGRESS', 'WAITING_FOR_CUSTOMER', 'RESOLVED', 'CLOSED', 'CANCELLED');
 ALTER TABLE "public"."Ticket" ALTER COLUMN "status" DROP DEFAULT;
-ALTER TABLE "tickets" ALTER COLUMN "status" TYPE "TicketStatus_new" USING ("status"::text::"TicketStatus_new");
+ALTER TABLE "Ticket" ALTER COLUMN "status" TYPE "TicketStatus_new" USING ("status"::text::"TicketStatus_new");
 ALTER TYPE "TicketStatus" RENAME TO "TicketStatus_old";
 ALTER TYPE "TicketStatus_new" RENAME TO "TicketStatus";
 DROP TYPE "public"."TicketStatus_old";
