@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { NotificationsModule } from './notifications/notifications.module';
+import { NotificationsModule } from './events/notifications.module';
 import { SystemModule } from './system/system.module';
 
 @Module({

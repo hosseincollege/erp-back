@@ -34,6 +34,9 @@ model User {
   preferences               UserPreference?
   notifications             Notification[]
   createdAnnouncements      Announcement[]                   @relation("AnnouncementCreator")
+  announcementReactions     AnnouncementReaction[]
+  announcementComments      AnnouncementComment[]
+  announcementMentions      AnnouncementCommentMention[]
   developmentTestDataRuns   DevelopmentTestDataRun[]
 
   @@index([status])
@@ -46,8 +49,10 @@ model UserPreference {
   userId        String   @unique
   locale        String   @default("fa")
   accentColor   String   @default("blue")
-  lightContrast String   @default("balanced")
-  darkContrast  String   @default("balanced")
+  lightContrast   String   @default("balanced")
+  darkContrast    String   @default("balanced")
+  lightBrightness String   @default("balanced")
+  darkBrightness  String   @default("balanced")
   calendar      String   @default("persian")
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt

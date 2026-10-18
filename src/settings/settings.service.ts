@@ -26,8 +26,18 @@ import {
 import { SaveRoleDto } from './roles/dto/save-role.dto';
 import { AuthenticatedUser } from '../core/auth/strategies/jwt.strategy';
 import { OrganizationLogoStorageService } from './company/organization-logo-storage.service';
+import { ORGANIZATION_ACCENT_COLORS } from './appearance-palette.backup';
 
 const VISITOR_TIME_ZONE = 'Asia/Tehran';
+
+function normalizeOrganizationAccent<T extends { accentPreset: string }>(settings: T) {
+  if (settings.accentPreset === 'custom') return settings;
+  const preset = settings.accentPreset in ORGANIZATION_ACCENT_COLORS
+    ? settings.accentPreset as keyof typeof ORGANIZATION_ACCENT_COLORS
+    : 'blue';
+  const [accentLightColor, accentDarkColor] = ORGANIZATION_ACCENT_COLORS[preset];
+  return { ...settings, accentPreset: preset, accentLightColor, accentDarkColor };
+}
 
 function zonedDateParts(date: Date) {
   const parts = new Intl.DateTimeFormat('en-US', {
@@ -292,7 +302,7 @@ export class SettingsService {
       },
     });
 
-    return { ...settings, canEdit: access.canEdit };
+    return { ...normalizeOrganizationAccent(settings), canEdit: access.canEdit };
   }
 
   async updateOrganizationAppearance(
@@ -311,10 +321,18 @@ export class SettingsService {
       throw new BadRequestException('منطقه زمانی معتبر نیست.');
     }
 
-    return this.prisma.organizationSettings.upsert({
+    const appearance = dto.accentPreset === 'custom'
+      ? dto
+      : {
+          ...dto,
+          accentLightColor: ORGANIZATION_ACCENT_COLORS[dto.accentPreset as keyof typeof ORGANIZATION_ACCENT_COLORS][0],
+          accentDarkColor: ORGANIZATION_ACCENT_COLORS[dto.accentPreset as keyof typeof ORGANIZATION_ACCENT_COLORS][1],
+        };
+
+    const savedAppearance = await this.prisma.organizationSettings.upsert({
       where: { organizationId: id },
-      create: { organizationId: id, ...dto },
-      update: dto,
+      create: { organizationId: id, ...appearance },
+      update: appearance,
       select: {
         accentPreset: true,
         accentLightColor: true,
@@ -324,6 +342,8 @@ export class SettingsService {
         calendar: true,
       },
     });
+
+    return { ...savedAppearance, canEdit: access.canEdit };
   }
 
   async getOrganizationBranding(id: string, user: AuthenticatedUser) {

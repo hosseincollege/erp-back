@@ -12,6 +12,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { UpdateUserPreferencesDto } from './dto/update-user-preferences.dto';
+import { UpdateOwnProfileDto } from './dto/update-own-profile.dto';
 
 type AuthUser = {
   id: string;
@@ -181,9 +182,155 @@ export class AuthService {
         firstName: user.firstName,
         lastName: user.lastName,
         email: user.email,
+        phone: user.phone,
         organizationId: membership?.organizationId ?? null,
       },
     };
+  }
+
+  async updateMe(userId: string, dto: UpdateOwnProfileDto) {
+    const user = await this.validateUser(userId);
+    if (!user) throw new UnauthorizedException('حساب کاربری فعال نیست');
+
+    const firstName = dto.firstName?.trim();
+    const lastName = dto.lastName?.trim();
+    const phone =
+      dto.phone === undefined ? undefined : dto.phone?.trim() || null;
+
+    if (phone) {
+      const existing = await this.prisma.user.findFirst({
+        where: { phone, id: { not: userId } },
+        select: { id: true },
+      });
+      if (existing) {
+        throw new ConflictException('این شماره تلفن قبلاً ثبت شده است');
+      }
+    }
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const profile = await tx.user.update({
+        where: { id: userId },
+        data: {
+          ...(firstName ? { firstName } : {}),
+          ...(lastName ? { lastName } : {}),
+          ...(phone !== undefined ? { phone } : {}),
+        },
+        select: {
+          id: true,
+          username: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          phone: true,
+        },
+      });
+
+      if (firstName || lastName) {
+        await tx.employee.updateMany({
+          where: { userId },
+          data: {
+            ...(firstName ? { firstName } : {}),
+            ...(lastName ? { lastName } : {}),
+          },
+        });
+      }
+
+      return profile;
+    });
+
+    return { user: updated };
+  }
+
+  async getOrganizationDirectory(userId: string) {
+    const membership = await this.prisma.organizationMember.findFirst({
+      where: {
+        userId,
+        status: 'ACTIVE',
+        organization: { status: 'ACTIVE' },
+      },
+      orderBy: { createdAt: 'asc' },
+      select: { organizationId: true },
+    });
+
+    if (!membership) return null;
+
+    const [organization, employees] = await Promise.all([
+      this.prisma.organization.findUnique({
+        where: { id: membership.organizationId },
+        select: {
+          id: true,
+          name: true,
+          legalName: true,
+          phone: true,
+          email: true,
+          website: true,
+          address: true,
+          branches: {
+            where: { isActive: true },
+            orderBy: [{ isMain: 'desc' }, { name: 'asc' }],
+            select: {
+              id: true,
+              name: true,
+              code: true,
+              address: true,
+              phone: true,
+              email: true,
+              isMain: true,
+            },
+          },
+          departments: {
+            where: { isActive: true },
+            orderBy: { name: 'asc' },
+            select: {
+              id: true,
+              name: true,
+              code: true,
+              branchId: true,
+              branch: { select: { id: true, name: true } },
+              manager: {
+                select: {
+                  id: true,
+                  firstName: true,
+                  lastName: true,
+                  jobTitle: true,
+                },
+              },
+            },
+          },
+        },
+      }),
+      this.prisma.employee.findMany({
+        where: {
+          organizationId: membership.organizationId,
+          status: { in: ['ACTIVE', 'ON_LEAVE'] },
+        },
+        orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          jobTitle: true,
+          status: true,
+          employeeCode: true,
+          branchId: true,
+          departmentId: true,
+          managerId: true,
+          branch: { select: { id: true, name: true } },
+          department: { select: { id: true, name: true } },
+          manager: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              jobTitle: true,
+            },
+          },
+        },
+      }),
+    ]);
+
+    if (!organization) return null;
+    return { organization, employees };
   }
 
   async getPreferences(userId: string) {
@@ -195,6 +342,8 @@ export class AuthService {
         locale: true,
         lightContrast: true,
         darkContrast: true,
+        lightBrightness: true,
+        darkBrightness: true,
       },
     });
   }
@@ -208,6 +357,8 @@ export class AuthService {
         locale: true,
         lightContrast: true,
         darkContrast: true,
+        lightBrightness: true,
+        darkBrightness: true,
       },
     });
   }

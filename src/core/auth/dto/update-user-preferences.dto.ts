@@ -26,4 +26,12 @@ export class UpdateUserPreferencesDto {
   @IsString()
   @IsIn(contrastLevels)
   darkContrast: string;
+
+  @IsString()
+  @IsIn(contrastLevels)
+  lightBrightness: string;
+
+  @IsString()
+  @IsIn(contrastLevels)
+  darkBrightness: string;
 }

@@ -6,16 +6,21 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Patch,
   Post,
   Put,
   Req,
   UnauthorizedException,
+  UseGuards,
 } from '@nestjs/common';
 
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { UpdateUserPreferencesDto } from './dto/update-user-preferences.dto';
+import { UpdateOwnProfileDto } from './dto/update-own-profile.dto';
+import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { RolesGuard } from './guards/roles.guard';
 import { Public } from './decorators/public.decorator';
 import type { Request } from 'express';
 
@@ -57,6 +62,25 @@ export class AuthController {
     }
 
     return this.authService.getMe(userId);
+  }
+
+  @Patch('me')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  updateMe(
+    @Req() request: AuthenticatedRequest,
+    @Body() dto: UpdateOwnProfileDto,
+  ) {
+    const userId = request.user?.id;
+    if (!userId) throw new UnauthorizedException('کاربر احراز هویت نشده است');
+    return this.authService.updateMe(userId, dto);
+  }
+
+  @Get('organization-directory')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  getOrganizationDirectory(@Req() request: AuthenticatedRequest) {
+    const userId = request.user?.id;
+    if (!userId) throw new UnauthorizedException('کاربر احراز هویت نشده است');
+    return this.authService.getOrganizationDirectory(userId);
   }
 
   @Get('preferences')

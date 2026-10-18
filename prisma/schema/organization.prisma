@@ -86,6 +86,7 @@ model Branch {
   organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   departments        Department[]
   employees          Employee[]
+  announcements      Announcement[]
 
   @@unique([organizationId, code]) // یکتایی کد در سطح هر سازمان
   @@index([organizationId])
@@ -151,14 +152,62 @@ model Announcement {
   priority        String         @default("normal")
   isPinned        Boolean        @default(false)
   isActive        Boolean        @default(true)
+  allowLikes      Boolean        @default(true)
+  allowReactions  Boolean        @default(true)
+  allowComments   Boolean        @default(true)
+  allowMentions   Boolean        @default(true)
+  branchId        String?
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
   organization    Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   createdBy       User?          @relation("AnnouncementCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
   notifications   Notification[]
+  branch          Branch?        @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  reactions       AnnouncementReaction[]
+  comments        AnnouncementComment[]
 
   @@index([organizationId, isActive, isPinned, createdAt])
   @@map("announcements")
+}
+
+model AnnouncementReaction {
+  id             String       @id @default(cuid())
+  announcementId String
+  userId         String
+  emoji          String       @db.VarChar(16)
+  createdAt      DateTime     @default(now())
+  announcement   Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([announcementId, userId, emoji])
+  @@index([announcementId, createdAt])
+  @@map("announcement_reactions")
+}
+
+model AnnouncementComment {
+  id             String                    @id @default(cuid())
+  announcementId String
+  userId         String
+  body           String                    @db.VarChar(2000)
+  createdAt      DateTime                  @default(now())
+  updatedAt      DateTime                  @updatedAt
+  announcement   Announcement              @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  user           User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mentions       AnnouncementCommentMention[]
+
+  @@index([announcementId, createdAt])
+  @@map("announcement_comments")
+}
+
+model AnnouncementCommentMention {
+  commentId String
+  userId    String
+  comment   AnnouncementComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  user      User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([commentId, userId])
+  @@index([userId])
+  @@map("announcement_comment_mentions")
 }
 
 model DevelopmentTestDataRun {

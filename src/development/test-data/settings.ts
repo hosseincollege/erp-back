@@ -20,9 +20,9 @@ export async function seedSettings(ctx: TestDataContext): Promise<TestDataCounts
     create: {
       organizationId: ctx.organizationId,
       accentPreset: 'blue',
-      accentLightColor: '#2563eb',
-      accentDarkColor: '#1d4ed8',
-      backgroundStyle: 'THEME',
+      accentLightColor: '#60a5fa',
+      accentDarkColor: '#3b82f6',
+      backgroundStyle: 'GRAY',
       calendar: 'persian',
       timezone: 'Asia/Tehran',
     },
@@ -65,6 +65,11 @@ export async function seedSettings(ctx: TestDataContext): Promise<TestDataCounts
       priority: index === 2 ? 'high' : 'normal',
       isPinned: index === 0,
       isActive: true,
+      allowLikes: true,
+      allowReactions: true,
+      allowComments: true,
+      allowMentions: true,
+      branchId: index === 1 ? savedBranches[1].id : null,
     } });
   }
   return { organizationSettings: 1, branches: branches.length, departments: departments.length, announcements: announcements.length };
