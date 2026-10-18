@@ -379,37 +379,4 @@ export class SettingsController {
     );
   }
 
-  @Get('export/:organizationId')
-  async exportOrganization(
-    @Param('organizationId') organizationId: string,
-    @CurrentUser() user: AuthenticatedUser,
-  ) {
-    if (!organizationId || organizationId.trim() === '') {
-      throw new BadRequestException('شناسه سازمان نامعتبر است.');
-    }
-
-    return this.settingsService.exportOrganizationData(
-      organizationId.trim(),
-      user,
-    );
-  }
-
-  @Post('import/:organizationId')
-  async importOrganization(
-    @Param('organizationId') organizationId: string,
-    @Body() dto: ImportOrganizationDto,
-    @CurrentUser() user: AuthenticatedUser,
-  ) {
-    if (!organizationId || organizationId.trim() === '') {
-      throw new BadRequestException(
-        'شناسه سازمان در آدرس درخواست نامعتبر است.',
-      );
-    }
-
-    return this.settingsService.importOrganizationData(
-      organizationId.trim(),
-      dto,
-      user,
-    );
-  }
 }

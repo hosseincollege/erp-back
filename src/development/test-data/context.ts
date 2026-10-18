@@ -24,12 +24,12 @@ export function fixtureUserId(ctx: TestDataContext, index: number) {
 export async function ensureFixtureBranchAndDepartment(ctx: TestDataContext) {
   const branch = await ctx.db.branch.upsert({
     where: { organizationId_code: { organizationId: ctx.organizationId, code: 'TEST-CENTRAL' } },
-    create: { organizationId: ctx.organizationId, code: 'TEST-CENTRAL', name: 'شعبهٔ آزمایشی مرکزی', address: 'تهران، خیابان نمونه' },
+    create: { organizationId: ctx.organizationId, code: 'TEST-CENTRAL', name: 'شعبه مرکزی تهران', address: 'تهران، خیابان ولیعصر، پلاک ۲۴۰' },
     update: {},
   });
   const department = await ctx.db.department.upsert({
     where: { organizationId_code: { organizationId: ctx.organizationId, code: 'TEST-OPS' } },
-    create: { organizationId: ctx.organizationId, branchId: branch.id, code: 'TEST-OPS', name: 'واحد عملیات آزمایشی' },
+    create: { organizationId: ctx.organizationId, branchId: branch.id, code: 'TEST-OPS', name: 'واحد عملیات و پشتیبانی' },
     update: {},
   });
   return { branch, department };

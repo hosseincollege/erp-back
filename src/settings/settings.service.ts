@@ -1076,17 +1076,6 @@ export class SettingsService {
     return { message: 'دپارتمان با موفقیت حذف شد.', id };
   }
 
-  async exportOrganizationData(
-    organizationId: string,
-    user: AuthenticatedUser,
-  ) {
-    const access = await this.getOrganizationAccess(organizationId, user);
-    if (!access.canView) {
-      throw new ForbiddenException('مجوز دریافت اطلاعات این سازمان را ندارید.');
-    }
-    return this.getOrganizationSettings(organizationId);
-  }
-
   async importOrganizationData(
     organizationId: string,
     dto: ImportOrganizationDto,
