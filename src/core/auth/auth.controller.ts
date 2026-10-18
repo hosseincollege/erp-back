@@ -17,7 +17,7 @@ import {
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
-import { UpdateUserPreferencesDto } from './dto/update-user-preferences.dto';
+import { UpdateUserPreferencesDto, UpdateWorkspaceModeDto } from './dto/update-user-preferences.dto';
 import { UpdateOwnProfileDto } from './dto/update-own-profile.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
@@ -98,5 +98,16 @@ export class AuthController {
     const userId = request.user?.id;
     if (!userId) throw new UnauthorizedException('کاربر احراز هویت نشده است');
     return this.authService.updatePreferences(userId, dto);
+  }
+
+  @Put('preferences/workspace-mode')
+  @UseGuards(JwtAuthGuard)
+  updateWorkspaceMode(
+    @Req() request: AuthenticatedRequest,
+    @Body() dto: UpdateWorkspaceModeDto,
+  ) {
+    const userId = request.user?.id;
+    if (!userId) throw new UnauthorizedException('کاربر احراز هویت نشده است');
+    return this.authService.updateWorkspaceMode(userId, dto.workspaceMode as 'FORM' | 'COMMAND' | 'AI');
   }
 }

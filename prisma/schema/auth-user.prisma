@@ -53,6 +53,7 @@ model UserPreference {
   darkContrast    String   @default("balanced")
   lightBrightness String   @default("balanced")
   darkBrightness  String   @default("balanced")
+  workspaceMode  String   @default("FORM")
   calendar      String   @default("persian")
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt

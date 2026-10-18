@@ -1,4 +1,4 @@
-﻿ALTER TABLE "user_preferences"
+ALTER TABLE "user_preferences"
   RENAME COLUMN "lightContrast" TO "lightBrightness";
 
 ALTER TABLE "user_preferences"

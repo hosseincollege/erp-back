@@ -309,6 +309,8 @@ export class AuthService {
           id: true,
           firstName: true,
           lastName: true,
+          email: true,
+          phone: true,
           jobTitle: true,
           status: true,
           employeeCode: true,
@@ -344,6 +346,7 @@ export class AuthService {
         darkContrast: true,
         lightBrightness: true,
         darkBrightness: true,
+        workspaceMode: true,
       },
     });
   }
@@ -359,7 +362,17 @@ export class AuthService {
         darkContrast: true,
         lightBrightness: true,
         darkBrightness: true,
+        workspaceMode: true,
       },
+    });
+  }
+
+  async updateWorkspaceMode(userId: string, workspaceMode: 'FORM' | 'COMMAND' | 'AI') {
+    return this.prisma.userPreference.upsert({
+      where: { userId },
+      create: { userId, workspaceMode },
+      update: { workspaceMode },
+      select: { workspaceMode: true },
     });
   }
 

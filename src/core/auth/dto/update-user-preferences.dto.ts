@@ -35,3 +35,9 @@ export class UpdateUserPreferencesDto {
   @IsIn(contrastLevels)
   darkBrightness: string;
 }
+
+export class UpdateWorkspaceModeDto {
+  @IsString()
+  @IsIn(['FORM', 'COMMAND', 'AI'])
+  workspaceMode: string;
+}
