@@ -1,4 +1,4 @@
-// Path: backend/src/supply/dto/create-warehouse.dto.ts
+// Path: backend/src/commerce/inventory/dto/create-warehouse.dto.ts
 // Backend - DTO for creating an inventory warehouse
 
 import { IsOptional, IsString, MinLength } from 'class-validator';

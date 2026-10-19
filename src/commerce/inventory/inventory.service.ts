@@ -1,4 +1,4 @@
-// Path: backend/src/supply/inventory.service.ts
+// Commerce inventory domain service.
 
 import {
   BadRequestException,
@@ -6,8 +6,8 @@ import {
   Injectable,
 } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
-import type { AuthenticatedUser } from '../core/auth/strategies/jwt.strategy';
-import { PrismaService } from '../core/prisma/prisma.service';
+import type { AuthenticatedUser } from '../../core/auth/strategies/jwt.strategy';
+import { PrismaService } from '../../core/prisma/prisma.service';
 import {
   CreateProductDto,
   CreateWarehouseDto,

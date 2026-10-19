@@ -1,4 +1,4 @@
-// Path: backend/src/supply/dto/create-stock-transfer.dto.ts
+// Path: backend/src/commerce/inventory/dto/create-stock-transfer.dto.ts
 // Backend - DTO for stock transfer operations
 
 import { Type } from 'class-transformer';

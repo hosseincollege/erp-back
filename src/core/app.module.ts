@@ -16,7 +16,6 @@ import { PrismaModule } from './prisma/prisma.module';
 import { SetupModule } from './setup/setup.module';
 import { StatisticsModule } from '../statistics/statistics.module';
 import { SettingsModule } from '../settings/settings.module';
-import { SupplyModule } from '../supply/supply.module';
 import { SupportModule } from '../support/support.module';
 
 @Module({
@@ -31,7 +30,6 @@ import { SupportModule } from '../support/support.module';
     AccountingModule,
     CommerceModule,
     HumanResourcesModule,
-    SupplyModule,
     StatisticsModule,
     SettingsModule,
     SupportModule,

@@ -10,7 +10,8 @@ import { JwtService } from '@nestjs/jwt';
 import type { AuthenticatedUser } from '../core/auth/strategies/jwt.strategy';
 import { PrismaService } from '../core/prisma/prisma.service';
 import { isTestDataModuleKey, seedTestDataModule, TEST_DATA_MODULES } from './test-data';
-import type { TestDataCounts } from './test-data/context';
+import { seedSupply } from './test-data/supply';
+import type { TestDataContext, TestDataCounts } from './test-data/context';
 
 @Injectable()
 export class DevelopmentService {
@@ -91,11 +92,17 @@ export class DevelopmentService {
     return {
       modules: TEST_DATA_MODULES.map((moduleKey) => {
         const run = byModule.get(moduleKey);
-        const counts = (run?.recordCounts ?? {}) as Record<string, number>;
+        const legacySupplyRun = moduleKey === 'commerce' ? byModule.get('supply') : undefined;
+        const counts = {
+          ...((run?.recordCounts ?? {}) as Record<string, number>),
+          ...((legacySupplyRun?.recordCounts ?? {}) as Record<string, number>),
+        };
+        const progressRuns = [run, legacySupplyRun].filter((item) => item !== undefined);
+        const applied = Boolean(run && (moduleKey !== 'commerce' || legacySupplyRun));
         return {
           moduleKey,
-          applied: Boolean(run),
-          appliedAt: run?.appliedAt.toISOString() ?? null,
+          applied,
+          appliedAt: progressRuns.map((item) => item.appliedAt).sort((a, b) => b.getTime() - a.getTime())[0]?.toISOString() ?? null,
           recordCounts: counts,
           totalRecords: Object.values(counts).reduce((total, value) => total + (typeof value === 'number' ? value : 0), 0),
         };
@@ -121,18 +128,25 @@ export class DevelopmentService {
     });
     const userIds = organizationUsers.map(({ userId }) => userId);
     return this.prisma.$transaction(async (db) => {
-      const counts = await seedTestDataModule(moduleKey, {
+      const context: TestDataContext = {
         db,
         organizationId,
         userId: actor.id,
         userIds,
         now: new Date(),
+      };
+      const crmCounts = await seedTestDataModule(moduleKey, context);
+      const inventoryCounts = moduleKey === 'commerce'
+        ? await seedSupply(context)
+        : null;
+      const counts = inventoryCounts ? { ...crmCounts, ...inventoryCounts } : crmCounts;
+      const saveProgress = (key: string, recordCounts: TestDataCounts) => db.developmentTestDataRun.upsert({
+        where: { organizationId_moduleKey: { organizationId, moduleKey: key } },
+        create: { organizationId, appliedById: actor.id, moduleKey: key, recordCounts },
+        update: { appliedById: actor.id, recordCounts, appliedAt: new Date() },
       });
-      const run = await db.developmentTestDataRun.upsert({
-        where: { organizationId_moduleKey: { organizationId, moduleKey } },
-        create: { organizationId, appliedById: actor.id, moduleKey, recordCounts: counts },
-        update: { appliedById: actor.id, recordCounts: counts, appliedAt: new Date() },
-      });
+      const run = await saveProgress(moduleKey, crmCounts);
+      if (inventoryCounts) await saveProgress('supply', inventoryCounts);
       return {
         moduleKey,
         applied: true,
@@ -140,7 +154,7 @@ export class DevelopmentService {
         recordCounts: counts as TestDataCounts,
         totalRecords: Object.values(counts).reduce((total, value) => total + value, 0),
       };
-    });
+    }, { maxWait: 15000, timeout: 60000 });
   }
 
   async listAccounts(actor: AuthenticatedUser) {

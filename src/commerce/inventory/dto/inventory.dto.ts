@@ -1,4 +1,4 @@
-// Path: backend/src/supply/dto/inventory.dto.ts
+// Path: backend/src/commerce/inventory/dto/inventory.dto.ts
 
 import { IsString, IsNotEmpty, IsOptional, IsNumber, IsEnum, IsArray, ValidateNested, Min } from 'class-validator';
 import { Type } from 'class-transformer';

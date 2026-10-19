@@ -4,7 +4,6 @@ import { seedCommerce } from './commerce';
 import { seedHumanResources } from './human-resources';
 import { seedSettings } from './settings';
 import { seedStatistics } from './statistics';
-import { seedSupply } from './supply';
 import { seedSupport } from './support';
 
 export const TEST_DATA_MODULES = [
@@ -13,7 +12,6 @@ export const TEST_DATA_MODULES = [
   'human-resources',
   'statistics',
   'settings',
-  'supply',
   'support',
 ] as const;
 
@@ -30,7 +28,6 @@ export async function seedTestDataModule(key: TestDataModuleKey, context: TestDa
     case 'human-resources': return seedHumanResources(context);
     case 'statistics': return seedStatistics(context);
     case 'settings': return seedSettings(context);
-    case 'supply': return seedSupply(context);
     case 'support': return seedSupport(context);
   }
 }

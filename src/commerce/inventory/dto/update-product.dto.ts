@@ -1,8 +1,9 @@
-// Path: backend/src/supply/dto/create-product.dto.ts
-// Backend - DTO for creating an inventory product
+// Path: backend/src/commerce/inventory/dto/update-product.dto.ts
+// Backend - DTO for updating an inventory product
 
 import { Type } from 'class-transformer';
 import {
+  IsBoolean,
   IsNumber,
   IsOptional,
   IsString,
@@ -10,26 +11,28 @@ import {
   MinLength,
 } from 'class-validator';
 
-export class CreateProductDto {
+export class UpdateProductDto {
+  @IsOptional()
   @IsString()
   @MinLength(1)
-  sku!: string;
-
-  @IsString()
-  @MinLength(1)
-  name!: string;
+  name?: string;
 
   @IsOptional()
   @IsString()
   description?: string;
 
+  @IsOptional()
   @IsString()
   @MinLength(1)
-  unit!: string;
+  unit?: string;
 
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
   @Min(0)
   minQuantity?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
 }

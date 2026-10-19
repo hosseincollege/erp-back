@@ -17,7 +17,7 @@ export class UpdateOrganizationAppearanceDto {
   accentDarkColor: string;
 
   @IsString()
-  @IsIn(['THEME', 'GRAY'])
+  @IsIn(['NAVY', 'GRAY', 'THEME'])
   backgroundStyle: string;
 
   @IsString()

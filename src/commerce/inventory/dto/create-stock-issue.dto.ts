@@ -1,4 +1,4 @@
-// Path: backend/src/supply/dto/create-stock-issue.dto.ts
+// Path: backend/src/commerce/inventory/dto/create-stock-issue.dto.ts
 // Backend - DTO for stock issue operations
 
 import { Type } from 'class-transformer';

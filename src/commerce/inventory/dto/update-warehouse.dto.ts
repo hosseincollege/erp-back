@@ -1,4 +1,4 @@
-// Path: backend/src/supply/dto/update-warehouse.dto.ts
+// Path: backend/src/commerce/inventory/dto/update-warehouse.dto.ts
 // Backend - DTO for updating an inventory warehouse
 
 import { IsBoolean, IsOptional, IsString, MinLength } from 'class-validator';

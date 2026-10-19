@@ -1,9 +1,9 @@
-// Path: backend/src/supply/inventory.module.ts
+// Commerce inventory feature module.
 
 import { Module } from '@nestjs/common';
 import { InventoryController } from './inventory.controller';
 import { InventoryService } from './inventory.service';
-import { PrismaModule } from '../core/prisma/prisma.module';
+import { PrismaModule } from '../../core/prisma/prisma.module';
 
 @Module({
   imports: [PrismaModule],
@@ -11,4 +11,4 @@ import { PrismaModule } from '../core/prisma/prisma.module';
   providers: [InventoryService],
   exports: [InventoryService],
 })
-export class SupplyModule {}
+export class InventoryModule {}

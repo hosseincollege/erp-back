@@ -2,6 +2,37 @@ import type { TestDataContext, TestDataCounts } from './context';
 import { ensureFixtureBranchAndDepartment, fixtureDate, fixtureUserId } from './context';
 
 const leaveStatuses = ['PENDING', 'PENDING', 'DRAFT', 'APPROVED', 'REJECTED', 'CANCELLED', 'PENDING', 'APPROVED', 'PENDING', 'REJECTED', 'DRAFT', 'PENDING', 'APPROVED', 'PENDING', 'CANCELLED', 'PENDING', 'APPROVED', 'REJECTED', 'PENDING', 'DRAFT'] as const;
+const employeeFixtures = [
+  ['آرمان', 'احمدی', 'کارشناس مالی'], ['نگار', 'رضایی', 'توسعه‌دهنده نرم‌افزار'], ['کیان', 'کریمی', 'کارشناس فروش'], ['رها', 'موسوی', 'مدیر منابع انسانی'],
+  ['پارسا', 'جعفری', 'کارشناس انبار'], ['سارا', 'حسینی', 'حسابدار'], ['فرهاد', 'مرادی', 'کارشناس شبکه'], ['یاسمین', 'قاسمی', 'کارشناس منابع انسانی'],
+  ['امیرعلی', 'نادری', 'کارشناس تدارکات'], ['ترانه', 'نوری', 'تحلیلگر مالی'], ['بابک', 'صادقی', 'سرپرست فروش'], ['ملیکا', 'رحیمی', 'کارشناس پشتیبانی'],
+  ['کامران', 'اکبری', 'برنامه‌نویس سامانه'], ['هستی', 'عباسی', 'کارشناس حقوق و دستمزد'], ['شهاب', 'کاظمی', 'مسئول تدارکات'], ['مهسا', 'میرزایی', 'مدیر شعبه'],
+] as const;
+const previousEmployeeNames = [
+  ['آرمان', 'احمدی'], ['نگار', 'رضایی'], ['کیان', 'کریمی'], ['رها', 'موسوی'], ['پارسا', 'جعفری'], ['سارا', 'حسینی'],
+] as const;
+const leaveReasons = [
+  'مرخصی سالانه برای انجام امور بانکی و پیگیری وام مسکن',
+  'مراجعه به درمانگاه برای پیگیری نتیجه آزمایش خون',
+  'حضور در جلسه اولیا و مربیان فرزند در مدرسه',
+  'مرخصی ساعتی برای تمدید گذرنامه در دفتر خدمات دولت',
+  'مرخصی سالانه برای سفر خانوادگی از پیش برنامه‌ریزی‌شده',
+  'مراجعه پزشکی برای ویزیت دوره‌ای دندان‌پزشکی',
+  'رسیدگی به امور درمانی یکی از اعضای خانواده',
+  'مرخصی ساعتی برای مراجعه به اداره امور مالیاتی',
+  'مرخصی سالانه برای جابه‌جایی محل سکونت',
+  'مراجعه پزشکی برای پیگیری فیزیوتراپی زانو',
+  'حضور در مراسم خانوادگی و همراهی والدین',
+  'مرخصی ساعتی برای تحویل مدارک دانشگاهی',
+  'مرخصی سالانه برای سفر کاری همسر و همراهی خانواده',
+  'مراجعه به پزشک متخصص برای بررسی درد کمر',
+  'رسیدگی به امور خانوادگی پس از ترخیص از بیمارستان',
+  'مرخصی ساعتی برای مراجعه به شعبه بانک و امضای قرارداد',
+  'مرخصی سالانه برای انجام امور ثبتی منزل',
+  'مراجعه پزشکی برای معاینه سالانه و تمدید نسخه',
+  'حضور در جلسه رسیدگی به پرونده بیمه درمانی خانواده',
+  'مرخصی ساعتی برای پیگیری ثبت‌نام مدرسه فرزند',
+] as const;
 
 export async function seedHumanResources(ctx: TestDataContext): Promise<TestDataCounts> {
   const { branch, department } = await ensureFixtureBranchAndDepartment(ctx);
@@ -17,12 +48,12 @@ export async function seedHumanResources(ctx: TestDataContext): Promise<TestData
         branchId: branch.id,
         departmentId: department.id,
         employeeCode,
-        firstName: ['آرمان', 'نگار', 'کیان', 'رها', 'پارسا', 'سارا'][index % 6],
-        lastName: ['احمدی', 'رضایی', 'کریمی', 'موسوی', 'جعفری', 'حسینی'][index % 6],
+        firstName: employeeFixtures[index][0],
+        lastName: employeeFixtures[index][1],
         nationalId: null,
         phone: `0912000${serial.padStart(4, '0')}`,
         email: `employee-${serial}@example.com`,
-        jobTitle: ['کارشناس مالی', 'توسعه‌دهنده', 'کارشناس فروش', 'مدیر منابع انسانی'][index % 4],
+        jobTitle: employeeFixtures[index][2],
         employmentType: (['FULL_TIME', 'PART_TIME', 'CONTRACTOR', 'INTERN'] as const)[index % 4],
         status,
         hiredAt: fixtureDate(ctx.now, 500 - index * 17),
@@ -30,10 +61,15 @@ export async function seedHumanResources(ctx: TestDataContext): Promise<TestData
         notes: 'پرونده پرسنلی شامل اطلاعات استخدام، حضور و ارزیابی‌های دوره‌ای.',
       },
       update: {},
-      select: { id: true, employeeCode: true, lastName: true, email: true, nationalId: true, notes: true },
+      select: { id: true, employeeCode: true, firstName: true, lastName: true, email: true, nationalId: true, notes: true },
     });
-    const legacyValues: { lastName?: string; email?: string; nationalId?: null; notes?: string } = {};
-    if (employee.lastName === `کارمند آزمایشی ${serial}`) legacyValues.lastName = ['احمدی', 'رضایی', 'کریمی', 'موسوی', 'جعفری', 'حسینی'][index % 6];
+    const legacyValues: { firstName?: string; lastName?: string; email?: string; nationalId?: null; notes?: string } = {};
+    const previousName = previousEmployeeNames[index % previousEmployeeNames.length];
+    if (employee.firstName === previousName[0] && employee.lastName === previousName[1]) {
+      legacyValues.firstName = employeeFixtures[index][0];
+      legacyValues.lastName = employeeFixtures[index][1];
+    }
+    if (employee.lastName === `کارمند آزمایشی ${serial}`) legacyValues.lastName = employeeFixtures[index][1];
     if (employee.email === `employee-test-${serial}@example.invalid`) legacyValues.email = `employee-${serial}@example.com`;
     if (employee.nationalId === `99999${serial}000`) legacyValues.nationalId = null;
     if (employee.notes === 'پروندهٔ آزمایشی؛ برای بررسی فهرست و گردش کار منابع انسانی.') legacyValues.notes = 'پرونده پرسنلی شامل اطلاعات استخدام، حضور و ارزیابی‌های دوره‌ای.';
@@ -44,11 +80,12 @@ export async function seedHumanResources(ctx: TestDataContext): Promise<TestData
   for (let index = 0; index < leaveStatuses.length; index += 1) {
     const employee = employees[index % employees.length];
     const serial = String(index + 1).padStart(2, '0');
-    const reason = `${['مرخصی سالانه برای امور شخصی', 'مراجعه پزشکی و استراحت', 'رسیدگی به امور خانوادگی', 'مرخصی ساعتی برای پیگیری اداری'][index % 4]} (${serial})`;
+    const reason = leaveReasons[index];
     const existing = await ctx.db.leaveRequest.findFirst({ where: { organizationId: ctx.organizationId, employeeId: employee.id, reason }, select: { id: true } });
     if (existing) continue;
+    const previousReason = `${['مرخصی سالانه برای امور شخصی', 'مراجعه پزشکی و استراحت', 'رسیدگی به امور خانوادگی', 'مرخصی ساعتی برای پیگیری اداری'][index % 4]} (${serial})`;
     const legacyReason = `درخواست مرخصی آزمایشی ${serial}`;
-    const legacyRequest = await ctx.db.leaveRequest.findFirst({ where: { organizationId: ctx.organizationId, employeeId: employee.id, reason: legacyReason }, select: { id: true, reviewerNote: true } });
+    const legacyRequest = await ctx.db.leaveRequest.findFirst({ where: { organizationId: ctx.organizationId, employeeId: employee.id, reason: { in: [previousReason, legacyReason] } }, select: { id: true, reason: true, reviewerNote: true } });
     if (legacyRequest) {
       const legacyNote = leaveStatuses[index] === 'APPROVED' ? 'درخواست تأیید شد (دادهٔ آزمایشی).' : leaveStatuses[index] === 'REJECTED' ? 'برای آزمون وضعیت ردشده.' : null;
       await ctx.db.leaveRequest.update({ where: { id: legacyRequest.id }, data: { reason, ...(legacyRequest.reviewerNote === legacyNote && { reviewerNote: leaveStatuses[index] === 'APPROVED' ? 'درخواست با هماهنگی سرپرست تأیید شد.' : leaveStatuses[index] === 'REJECTED' ? 'به دلیل تداخل با برنامه کاری، درخواست تأیید نشد.' : null }) } });

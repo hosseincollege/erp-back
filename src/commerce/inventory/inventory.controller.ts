@@ -1,4 +1,4 @@
-// Path: backend/src/supply/inventory.controller.ts
+// Commerce inventory endpoints.
 
 import { Controller, Get, Post, Body } from '@nestjs/common';
 import { InventoryService } from './inventory.service';
@@ -9,8 +9,8 @@ import {
   CreateIssueDto,
   CreateTransferDto,
 } from './dto/inventory.dto';
-import { CurrentUser } from '../core/auth/decorators/current-user.decorator';
-import type { AuthenticatedUser } from '../core/auth/strategies/jwt.strategy';
+import { CurrentUser } from '../../core/auth/decorators/current-user.decorator';
+import type { AuthenticatedUser } from '../../core/auth/strategies/jwt.strategy';
 
 @Controller('inventory')
 export class InventoryController {
