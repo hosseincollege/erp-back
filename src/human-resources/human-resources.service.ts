@@ -31,6 +31,7 @@ import {
 } from '@prisma/client';
 
 import { PrismaService } from '../core/prisma/prisma.service';
+import { normalizeNationalId } from '../core/national-id';
 import { NotificationsService } from '../dashboard/events/notifications.service';
 import type { LocalizedNotificationText } from '../dashboard/events/notifications.service';
 
@@ -497,6 +498,7 @@ export class HumanResourcesService {
       departmentId?: string | null;
       managerId?: string | null;
     },
+    employeeId?: string,
   ): Promise<void> {
     if (dto.userId) {
       const membership =
@@ -515,6 +517,18 @@ export class HumanResourcesService {
         throw new BadRequestException(
           'کاربر انتخاب‌شده عضو فعال سازمان جاری نیست.',
         );
+      }
+
+      const alreadyLinked = await this.prisma.employee.findFirst({
+        where: {
+          organizationId,
+          userId: dto.userId,
+          ...(employeeId ? { id: { not: employeeId } } : {}),
+        },
+        select: { id: true },
+      });
+      if (alreadyLinked) {
+        throw new ConflictException('\u0627\u06cc\u0646 \u062d\u0633\u0627\u0628 \u0642\u0628\u0644\u0627\u064b \u0628\u0647 \u067e\u0631\u0648\u0646\u062f\u0647\u0654 \u067e\u0631\u0633\u0646\u0644\u06cc \u062f\u06cc\u06af\u0631\u06cc \u062f\u0631 \u0627\u06cc\u0646 \u0633\u0627\u0632\u0645\u0627\u0646 \u0648\u0635\u0644 \u0634\u062f\u0647 \u0627\u0633\u062a.');
       }
     }
 
@@ -868,9 +882,25 @@ export class HumanResourcesService {
     try {
       return await this.prisma.$transaction(async (tx) => {
         let assignedUserId: string | null = dto.userId ?? null;
+        let nationalId = normalizeNationalId(dto.nationalId);
+        if (!assignedUserId && nationalId) {
+          const matchingUsers = await tx.user.findMany({
+            where: {
+              nationalId,
+              memberships: { some: { organizationId, status: 'ACTIVE' } },
+              employeeProfiles: { none: { organizationId } },
+            },
+            select: { id: true },
+            take: 2,
+          });
+          if (matchingUsers.length > 1) {
+            throw new ConflictException('چند حساب کاربری با این کد ملی در سازمان پیدا شد؛ اتصال را دستی انجام دهید.');
+          }
+          assignedUserId = matchingUsers[0]?.id ?? null;
+        }
 
         // در صورت درخواست ایجاد حساب کاربری هم‌زمان
-        if (dto.createAccount) {
+        if (dto.createAccount && !assignedUserId) {
           const accountUsername = dto.username?.trim();
           if (!accountUsername) {
             throw new BadRequestException('برای ایجاد حساب، نام کاربری الزامی است.');
@@ -915,6 +945,7 @@ export class HumanResourcesService {
               lastName: dto.lastName,
               email: dto.email?.trim() || null,
               phone: dto.phone?.trim() || null,
+              nationalId,
               passwordHash,
               status: UserStatus.ACTIVE,
             },
@@ -957,6 +988,27 @@ export class HumanResourcesService {
         }
 
         // ایجاد رکورد نهایی کارمند
+        if (assignedUserId) {
+          const linkedUser = await tx.user.findFirst({
+            where: {
+              id: assignedUserId,
+              memberships: { some: { organizationId, status: 'ACTIVE' } },
+            },
+            select: { id: true, nationalId: true },
+          });
+          if (!linkedUser) {
+            throw new BadRequestException('\u062d\u0633\u0627\u0628 \u06a9\u0627\u0631\u0628\u0631\u06cc \u0645\u062a\u0639\u0644\u0642 \u0628\u0647 \u0633\u0627\u0632\u0645\u0627\u0646 \u0641\u0639\u0627\u0644 \u0646\u06cc\u0633\u062a.');
+          }
+          const accountNationalId = normalizeNationalId(linkedUser.nationalId);
+          if (nationalId && accountNationalId && nationalId !== accountNationalId) {
+            throw new ConflictException('Ú©Ø¯ Ù…Ù„ÛŒ Ù¾Ø±ÙˆÙ†Ø¯Ù‡ Ø¨Ø§ Ú©Ø¯ Ù…Ù„ÛŒ Ø­Ø³Ø§Ø¨ Ú©Ø§Ø±Ø¨Ø±ÛŒ Ù‡Ù…Ø®ÙˆØ§Ù†ÛŒ Ù†Ø¯Ø§Ø±Ø¯.');
+          }
+          nationalId = nationalId ?? accountNationalId;
+          if (nationalId && !accountNationalId) {
+            await tx.user.update({ where: { id: linkedUser.id }, data: { nationalId } });
+          }
+        }
+
         return tx.employee.create({
           data: {
             organizationId,
@@ -967,7 +1019,7 @@ export class HumanResourcesService {
             managerId: dto.managerId ?? null,
             firstName: dto.firstName,
             lastName: dto.lastName,
-            nationalId: dto.nationalId ?? null,
+            nationalId,
             phone: dto.phone ?? null,
             email: dto.email ?? null,
             jobTitle: dto.jobTitle ?? null,
@@ -1018,6 +1070,8 @@ export class HumanResourcesService {
         },
         select: {
           id: true,
+          userId: true,
+          nationalId: true,
         },
       });
 
@@ -1034,6 +1088,7 @@ export class HumanResourcesService {
     await this.validateEmployeeRelations(
       organizationId,
       dto,
+      employeeId,
     );
 
     const data: Prisma.EmployeeUncheckedUpdateInput = {};
@@ -1067,7 +1122,23 @@ export class HumanResourcesService {
     }
 
     if (dto.nationalId !== undefined) {
-      data.nationalId = dto.nationalId;
+      const nationalId = normalizeNationalId(dto.nationalId);
+      data.nationalId = nationalId;
+      if (dto.userId === undefined && !existingEmployee.userId && nationalId) {
+        const matchingUsers = await this.prisma.user.findMany({
+          where: {
+            nationalId,
+            memberships: { some: { organizationId, status: 'ACTIVE' } },
+            employeeProfiles: { none: { organizationId } },
+          },
+          select: { id: true },
+          take: 2,
+        });
+        if (matchingUsers.length > 1) {
+          throw new ConflictException('چند حساب کاربری با این کد ملی در سازمان پیدا شد؛ اتصال را دستی انجام دهید.');
+        }
+        if (matchingUsers[0]) data.userId = matchingUsers[0].id;
+      }
     }
 
     if (dto.phone !== undefined) {
@@ -1131,17 +1202,53 @@ export class HumanResourcesService {
       data.notes = dto.notes;
     }
 
-    try {
-      return await this.prisma.employee.update({
+    const targetUserId = typeof data.userId === 'string'
+      ? data.userId
+      : dto.userId !== undefined
+        ? dto.userId
+        : existingEmployee.userId;
+    let nationalIdToSetOnUser: string | null = null;
+    if (targetUserId) {
+      const linkedUser = await this.prisma.user.findFirst({
         where: {
-          id: employeeId,
+          id: targetUserId,
+          memberships: { some: { organizationId, status: 'ACTIVE' } },
         },
-        data,
-        include: {
-          user: { select: { id: true, username: true, firstName: true, lastName: true, email: true, phone: true, status: true } },
-          branch: true,
-          department: true,
-        },
+        select: { id: true, nationalId: true },
+      });
+      if (!linkedUser) {
+        throw new BadRequestException('\u062d\u0633\u0627\u0628 \u06a9\u0627\u0631\u0628\u0631\u06cc \u0645\u062a\u0639\u0644\u0642 \u0628\u0647 \u0633\u0627\u0632\u0645\u0627\u0646 \u0641\u0639\u0627\u0644 \u0646\u06cc\u0633\u062a.');
+      }
+      const accountNationalId = normalizeNationalId(linkedUser.nationalId);
+      const employeeNationalId = data.nationalId !== undefined
+        ? normalizeNationalId(data.nationalId as string | null)
+        : normalizeNationalId(existingEmployee.nationalId);
+      if (employeeNationalId && accountNationalId && employeeNationalId !== accountNationalId) {
+        throw new ConflictException('\u06a9\u062f \u0645\u0644\u06cc \u067e\u0631\u0648\u0646\u062f\u0647 \u0628\u0627 \u06a9\u062f \u0645\u0644\u06cc \u062d\u0633\u0627\u0628 \u06a9\u0627\u0631\u0628\u0631\u06cc \u0647\u0645\u062e\u0648\u0627\u0646\u06cc \u0646\u062f\u0627\u0631\u062f.');
+      }
+      const synchronizedNationalId = employeeNationalId ?? accountNationalId;
+      if (synchronizedNationalId && data.nationalId === undefined) {
+        data.nationalId = synchronizedNationalId;
+      }
+      if (synchronizedNationalId && !accountNationalId) {
+        nationalIdToSetOnUser = synchronizedNationalId;
+      }
+    }
+
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        if (targetUserId && nationalIdToSetOnUser) {
+          await tx.user.update({ where: { id: targetUserId }, data: { nationalId: nationalIdToSetOnUser } });
+        }
+        return tx.employee.update({
+          where: { id: employeeId },
+          data,
+          include: {
+            user: { select: { id: true, username: true, firstName: true, lastName: true, email: true, phone: true, status: true } },
+            branch: true,
+            department: true,
+          },
+        });
       });
     } catch (error) {
       this.handlePrismaError(error);

@@ -3,6 +3,8 @@ model User {
   username                  String                           @unique
   email                     String?                          @unique
   phone                     String?                          @unique
+  nationalId                String?
+  tokenVersion              Int                              @default(0)
   firstName                 String
   lastName                  String
   passwordHash              String
@@ -41,6 +43,7 @@ model User {
 
   @@index([status])
   @@index([lastLoginAt])
+  @@index([nationalId])
   @@map("users")
 }
 
@@ -60,6 +63,16 @@ model UserPreference {
   user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("user_preferences")
+}
+
+model AuthLoginAttempt {
+  keyHash        String   @id
+  attempts       Int      @default(0)
+  windowStartedAt DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([windowStartedAt])
+  @@map("auth_login_attempts")
 }
 
 enum UserStatus {

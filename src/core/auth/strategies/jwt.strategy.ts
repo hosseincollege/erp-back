@@ -16,6 +16,7 @@ export type JwtPayload = {
   organizationId?: string;
   impersonatedBy?: string;
   impersonationOrganizationId?: string;
+  tokenVersion?: number;
   iat?: number;
   exp?: number;
 };
@@ -61,6 +62,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
     if (!user) {
       throw new UnauthorizedException('کاربر یافت نشد یا حساب کاربری فعال نیست');
+    }
+
+    if ((payload.tokenVersion ?? 0) !== user.tokenVersion) {
+      throw new UnauthorizedException('نشست شما با تغییر رمز عبور منقضی شده است؛ دوباره وارد شوید.');
     }
 
     let organizationId: string | null = null;

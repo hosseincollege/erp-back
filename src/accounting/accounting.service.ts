@@ -24,6 +24,7 @@ import {
 import {
   AccountingInvoiceStatus,
   AccountingPriority,
+  AuditAction,
   Prisma,
 } from '@prisma/client';
 
@@ -130,6 +131,34 @@ export class AccountingService {
 
   async createVoucher(user: CurrentAuthUser, dto: CreateVoucherDto) {
     await this.requireManage(user);
+    if (!dto.description?.trim()) {
+      throw new BadRequestException('\u0634\u0631\u062d \u0633\u0646\u062f \u0627\u0644\u0632\u0627\u0645\u06cc \u0627\u0633\u062a.');
+    }
+    if (!Array.isArray(dto.lines) || dto.lines.length < 2) {
+      throw new BadRequestException('\u0633\u0646\u062f \u0628\u0627\u06cc\u062f \u062d\u062f\u0627\u0642\u0644 \u062f\u0648 \u0631\u062f\u06cc\u0641 \u062f\u0627\u0634\u062a\u0647 \u0628\u0627\u0634\u062f.');
+    }
+    const cents = (amount: number) => {
+      if (!Number.isFinite(amount) || amount < 0) return null;
+      const scaled = amount * 100;
+      if (!Number.isSafeInteger(Math.round(scaled)) || Math.abs(scaled - Math.round(scaled)) > 1e-7) return null;
+      return Math.round(scaled);
+    };
+    const debitCents: number[] = [];
+    const creditCents: number[] = [];
+    for (const line of dto.lines) {
+      const debit = cents(Number(line.debit));
+      const credit = cents(Number(line.credit));
+      if (debit === null || credit === null || (debit > 0) === (credit > 0)) {
+        throw new BadRequestException('\u0647\u0631 \u0631\u062f\u06cc\u0641 \u0628\u0627\u06cc\u062f \u0641\u0642\u0637 \u06cc\u06a9 \u0645\u0628\u0644\u063a \u0645\u062b\u0628\u062a \u0628\u062f\u0647\u06a9\u0627\u0631 \u06cc\u0627 \u0628\u0633\u062a\u0627\u0646\u06a9\u0627\u0631 \u062f\u0627\u0634\u062a\u0647 \u0628\u0627\u0634\u062f.');
+      }
+      debitCents.push(debit);
+      creditCents.push(credit);
+    }
+    const debitTotal = debitCents.reduce((sum, amount) => sum + amount, 0);
+    const creditTotal = creditCents.reduce((sum, amount) => sum + amount, 0);
+    if (!Number.isSafeInteger(debitTotal) || !Number.isSafeInteger(creditTotal) || debitTotal <= 0 || debitTotal !== creditTotal) {
+      throw new BadRequestException('\u062c\u0645\u0639 \u0628\u062f\u0647\u06a9\u0627\u0631 \u0648 \u0628\u0633\u062a\u0627\u0646\u06a9\u0627\u0631 \u0633\u0646\u062f \u0628\u0627\u06cc\u062f \u0628\u0631\u0627\u0628\u0631 \u0628\u0627\u0634\u062f.');
+    }
     const accountIds = [...new Set(dto.lines.map((line) => line.accountId))];
     const accounts = await this.prisma.accountingAccount.findMany({
       where: { organizationId: user.organizationId, isActive: true, id: { in: accountIds } }, select: { id: true },
@@ -155,7 +184,7 @@ export class AccountingService {
     if (voucher.status !== 'DRAFT') throw new BadRequestException('این سند قبلاً ثبت نهایی شده است.');
     const debitCents = voucher.lines.reduce((sum, line) => sum + Math.round(Number(line.debit) * 100), 0);
     const creditCents = voucher.lines.reduce((sum, line) => sum + Math.round(Number(line.credit) * 100), 0);
-    if (voucher.lines.length < 2 || debitCents <= 0 || debitCents !== creditCents || voucher.lines.some((line) => (Number(line.debit) > 0) === (Number(line.credit) > 0))) {
+    if (voucher.lines.length < 2 || !Number.isSafeInteger(debitCents) || !Number.isSafeInteger(creditCents) || debitCents <= 0 || debitCents !== creditCents || voucher.lines.some((line) => (Number(line.debit) > 0) === (Number(line.credit) > 0))) {
       throw new BadRequestException('برای ثبت نهایی، حداقل دو ردیف و توازن بدهکار و بستانکار لازم است.');
     }
     const posted = await this.prisma.accountingVoucher.updateMany({
@@ -498,24 +527,54 @@ export class AccountingService {
     dto: UpdateInvoiceStatusDto,
   ) {
     await this.requireManage(user);
-    await this.findInvoiceOrThrow(user.organizationId, invoiceId);
+    return this.prisma.$transaction(async (tx) => {
+      const current = await tx.accountingInvoice.findFirst({
+        where: { id: invoiceId, organizationId: user.organizationId },
+        include: { payments: true },
+      });
+      if (!current) {
+        throw new NotFoundException('ÙØ§Ú©ØªÙˆØ± Ù…ÙˆØ±Ø¯Ù†Ø¸Ø± ÛŒØ§ÙØª Ù†Ø´Ø¯ ÛŒØ§ Ø¨Ù‡ Ø³Ø§Ø²Ù…Ø§Ù† Ø´Ù…Ø§ ØªØ¹Ù„Ù‚ Ù†Ø¯Ø§Ø±Ø¯.');
+      }
+      if (current.status === AccountingInvoiceStatus.COMPLETED || current.status === AccountingInvoiceStatus.CANCELLED) {
+        throw new ConflictException('ÙˆØ¶Ø¹ÛŒØª Ù†Ù‡Ø§ÛŒÛŒ ÙØ§Ú©ØªÙˆØ± Ù‚Ø§Ø¨Ù„ ØªØºÛŒÛŒØ± Ù†ÛŒØ³Øª.');
+      }
+      if (dto.status === AccountingInvoiceStatus.COMPLETED) {
+        throw new BadRequestException('ØªÚ©Ù…ÛŒÙ„ ÙØ§Ú©ØªÙˆØ± ØªÙ†Ù‡Ø§ Ø¨Ø§ Ø«Ø¨Øª Ù¾Ø±Ø¯Ø§Ø®Øª Ú©Ø§Ù…Ù„ Ù…Ù…Ú©Ù† Ø§Ø³Øª.');
+      }
+      if (dto.status === current.status) {
+        throw new BadRequestException('ÙˆØ¶Ø¹ÛŒØª Ø¬Ø¯ÛŒØ¯ Ø¨Ø§ ÙˆØ¶Ø¹ÛŒØª ÙØ¹Ù„ÛŒ ÛŒÚ©ÛŒ Ù†ÛŒØ³Øª.');
+      }
 
-    const invoice = await this.prisma.accountingInvoice.update({
-      where: { id: invoiceId },
-      data: {
-        status: dto.status,
-        statusHistory: {
-          create: {
-            actedById: user.id,
-            status: dto.status,
-            note: dto.note?.trim() || null,
+      const invoice = await tx.accountingInvoice.update({
+        where: { id: invoiceId },
+        data: {
+          status: dto.status,
+          statusHistory: {
+            create: {
+              actedById: user.id,
+              status: dto.status,
+              note: dto.note?.trim() || null,
+            },
           },
         },
-      },
-      include: invoiceInclude,
-    });
-
-    return this.toDetail(invoice);
+        include: invoiceInclude,
+      });
+      await tx.auditLog.create({
+        data: {
+          organizationId: user.organizationId,
+          userId: user.id,
+          action: AuditAction.UPDATE,
+          entity: 'ACCOUNTING_INVOICE',
+          entityId: invoice.id,
+          metadata: {
+            invoiceNumber: invoice.documentNumber,
+            fromStatus: current.status,
+            toStatus: dto.status,
+          },
+        },
+      });
+      return this.toDetail(invoice);
+    }, { isolationLevel: 'Serializable' });
   }
 
   async registerInvoicePayment(
@@ -524,69 +583,93 @@ export class AccountingService {
     dto: RegisterInvoicePaymentDto,
   ) {
     await this.requireManage(user);
-    const invoice = await this.findInvoiceOrThrow(
-      user.organizationId,
-      invoiceId,
-    );
-
     const newPaymentAmount = Number(dto.paidAmount);
-
     if (!Number.isFinite(newPaymentAmount) || newPaymentAmount <= 0) {
-      throw new BadRequestException(
-        'مبلغ پرداخت باید بیشتر از صفر باشد.',
-      );
+      throw new BadRequestException('مبلغ پرداخت باید بیشتر از صفر باشد.');
     }
 
-    const alreadyPaid = invoice.payments.reduce(
-      (sum, payment) => sum + Number(payment.paidAmount),
-      0,
-    );
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        return await this.prisma.$transaction(async (tx) => {
+          const invoice = await tx.accountingInvoice.findFirst({
+            where: { id: invoiceId, organizationId: user.organizationId },
+            include: invoiceInclude,
+          });
+          if (!invoice) throw new NotFoundException('فاکتور موردنظر یافت نشد یا به سازمان شما تعلق ندارد.');
 
-    const totalAmount = Number(invoice.totalAmount);
-    const remainingAmount = this.roundMoney(totalAmount - alreadyPaid);
+          if (invoice.status === AccountingInvoiceStatus.CANCELLED) {
+            throw new BadRequestException('\u0628\u0631\u0627\u06cc \u0641\u0627\u06a9\u062a\u0648\u0631 \u0644\u063a\u0648\u0634\u062f\u0647 \u0646\u0645\u06cc\u200c\u062a\u0648\u0627\u0646 \u067e\u0631\u062f\u0627\u062e\u062a \u062b\u0628\u062a \u06a9\u0631\u062f.');
+          }
 
-    if (newPaymentAmount > remainingAmount) {
-      throw new BadRequestException(
-        'مبلغ پرداخت نمی‌تواند بیشتر از مانده فاکتور باشد.',
-      );
-    }
+          const alreadyPaid = invoice.payments.reduce(
+            (sum, payment) => sum + Number(payment.paidAmount),
+            0,
+          );
+          const totalAmount = Number(invoice.totalAmount);
+          const remainingAmount = this.roundMoney(totalAmount - alreadyPaid);
+          if (newPaymentAmount > remainingAmount) {
+            throw new BadRequestException('مبلغ پرداخت نمی‌تواند بیشتر از مانده فاکتور باشد.');
+          }
 
-    const isFullyPaid =
-      this.roundMoney(alreadyPaid + newPaymentAmount) >= totalAmount;
+          const isFullyPaid = this.roundMoney(alreadyPaid + newPaymentAmount) >= totalAmount;
+          const payment = await tx.accountingInvoicePayment.create({
+            data: {
+              invoiceId,
+              receivedById: user.id,
+              paidAmount: newPaymentAmount,
+              paidAt: dto.paidAt ? new Date(dto.paidAt) : new Date(),
+              method: dto.method ?? 'BANK_TRANSFER',
+              referenceNumber: dto.referenceNumber?.trim() || null,
+              note: dto.note?.trim() || null,
+              metadata: dto.metadata as Prisma.InputJsonValue | undefined,
+            },
+          });
 
-    const updatedInvoice = await this.prisma.accountingInvoice.update({
-      where: { id: invoiceId },
-      data: {
-        payments: {
-          create: {
-            receivedById: user.id,
-            paidAmount: newPaymentAmount,
-            paidAt: dto.paidAt ? new Date(dto.paidAt) : new Date(),
-            method: dto.method ?? 'BANK_TRANSFER',
-            referenceNumber: dto.referenceNumber?.trim() || null,
-            note: dto.note?.trim() || null,
-            metadata: dto.metadata as Prisma.InputJsonValue | undefined,
-          },
-        },
-        ...(isFullyPaid
-          ? {
-              status: AccountingInvoiceStatus.COMPLETED,
-              statusHistory: {
-                create: {
-                  actedById: user.id,
-                  status: AccountingInvoiceStatus.COMPLETED,
-                  note: 'فاکتور به‌طور کامل تسویه شد.',
+          if (isFullyPaid && invoice.status !== AccountingInvoiceStatus.COMPLETED) {
+            await tx.accountingInvoice.update({
+              where: { id: invoiceId },
+              data: {
+                status: AccountingInvoiceStatus.COMPLETED,
+                statusHistory: {
+                  create: {
+                    actedById: user.id,
+                    status: AccountingInvoiceStatus.COMPLETED,
+                    note: 'فاکتور به‌طور کامل تسویه شد.',
+                  },
                 },
               },
-            }
-          : {}),
-      },
-      include: invoiceInclude,
-    });
+            });
+          }
 
-    return this.toDetail(updatedInvoice);
+          await tx.auditLog.create({
+            data: {
+              organizationId: user.organizationId,
+              userId: user.id,
+              action: AuditAction.CREATE,
+              entity: 'ACCOUNTING_PAYMENT',
+              entityId: payment.id,
+              metadata: {
+                invoiceNumber: invoice.documentNumber,
+                invoiceSettled: isFullyPaid,
+              },
+            },
+          });
+
+          const updatedInvoice = await tx.accountingInvoice.findFirstOrThrow({
+            where: { id: invoiceId, organizationId: user.organizationId },
+            include: invoiceInclude,
+          });
+          return this.toDetail(updatedInvoice);
+        }, { isolationLevel: 'Serializable' });
+      } catch (error) {
+        const isSerializationConflict =
+          typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2034';
+        if (!isSerializationConflict || attempt === 2) throw error;
+      }
+    }
+
+    throw new ConflictException();
   }
-
   private async findInvoiceOrThrow(
     organizationId: string,
     invoiceId: string,

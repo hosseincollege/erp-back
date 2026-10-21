@@ -10,8 +10,10 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
+import { AuditAction } from '@prisma/client';
 
 import { PrismaService } from '../core/prisma/prisma.service';
+import { normalizeNationalId } from '../core/national-id';
 import { CreateOrganizationDto } from './company/dto/create-organization.dto';
 import { UpdateOrganizationSettingsDto } from './company/dto/update-organization-settings.dto';
 import { UpdateOrganizationAppearanceDto } from './company/dto/update-organization-appearance.dto';
@@ -595,6 +597,7 @@ export class SettingsService {
         lastName: u.lastName,
         email: u.email,
         phone: u.phone,
+        nationalId: u.nationalId,
         status: u.status,
         isSystemUser: u.isSystemUser,
         role: roleName,
@@ -612,9 +615,9 @@ export class SettingsService {
   async saveUsers(
     organizationId: string,
     users: any[],
-    user: AuthenticatedUser,
+    actor: AuthenticatedUser,
   ) {
-    const access = await this.getOrganizationAccess(organizationId, user);
+    const access = await this.getOrganizationAccess(organizationId, actor);
     if (!access.canEdit) {
       throw new ForbiddenException('مجوز ویرایش کاربران این سازمان را ندارید.');
     }
@@ -622,7 +625,7 @@ export class SettingsService {
     return this.prisma.$transaction(async (tx) => {
       const org = await tx.organization.findUnique({
         where: { id: organizationId },
-        select: { id: true },
+        select: { id: true, ownerId: true },
       });
 
       if (!org) {
@@ -636,10 +639,8 @@ export class SettingsService {
         },
       });
 
-      const defaultPasswordHash =
-        '$2b$10$EpRnTzVlqHNP0.fUbXUwSOyuiXe/QLSUG6x0ek5q4/6uX2k.4e7lS';
-
       for (const item of users) {
+        const nationalId = normalizeNationalId(item.nationalId ?? item.nationalCode);
         let user: any = null;
 
         if (item.id) {
@@ -669,18 +670,31 @@ export class SettingsService {
         const isUserActive = item.isActive !== false && item.status !== 'INACTIVE' && item.status !== 'DISABLED';
         const userStatus: 'ACTIVE' | 'DISABLED' = isUserActive ? 'ACTIVE' : 'DISABLED';
         const membershipStatus: 'ACTIVE' | 'SUSPENDED' = isUserActive ? 'ACTIVE' : 'SUSPENDED';
+        const isNewUser = !user;
+        const previousUser = user
+          ? {
+              username: user.username,
+              firstName: user.firstName,
+              lastName: user.lastName,
+              email: user.email,
+              phone: user.phone,
+              nationalId: user.nationalId,
+              status: user.status,
+            }
+          : null;
 
         if (!user) {
+          const password = typeof item.password === 'string' ? item.password.trim() : '';
+          if (password.length < 8) {
+            throw new BadRequestException('برای حساب جدید، رمز عبور حداقل ۸ کاراکتری وارد کنید.');
+          }
           const email = item.email?.trim().toLowerCase() || null;
           const generatedUsername =
             item.username?.trim() ||
             (email ? email.split('@')[0] : null) ||
             `user_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
 
-          const passwordHash =
-            item.password && item.password.trim().length > 0
-              ? await bcrypt.hash(item.password.trim(), 10)
-              : defaultPasswordHash;
+          const passwordHash = await bcrypt.hash(password, 12);
 
           user = await tx.user.create({
             data: {
@@ -689,6 +703,7 @@ export class SettingsService {
               lastName,
               email,
               phone: item.phone || null,
+              nationalId,
               passwordHash,
               status: userStatus,
             },
@@ -698,6 +713,7 @@ export class SettingsService {
             firstName,
             lastName,
             ...(item.phone !== undefined && { phone: item.phone }),
+            ...(item.nationalId !== undefined || item.nationalCode !== undefined ? { nationalId } : {}),
             status: userStatus,
           };
 
@@ -705,14 +721,24 @@ export class SettingsService {
             updateData.username = item.username.trim();
           }
 
-          if (item.password && item.password.trim().length > 0) {
-            updateData.passwordHash = await bcrypt.hash(item.password.trim(), 10);
+          if (typeof item.password === 'string' && item.password.trim().length > 0) {
+            const password = item.password.trim();
+            if (password.length < 8) {
+              throw new BadRequestException('رمز عبور باید حداقل ۸ کاراکتر باشد.');
+            }
+            updateData.passwordHash = await bcrypt.hash(password, 12);
+            updateData.tokenVersion = { increment: 1 };
           }
 
           user = await tx.user.update({
             where: { id: user.id },
             data: updateData,
           });
+        }
+
+        const isOrganizationOwner = user.id === org.ownerId;
+        if (isOrganizationOwner && userStatus !== 'ACTIVE') {
+          throw new BadRequestException('حساب مالک سازمان را نمی‌توان غیرفعال کرد.');
         }
 
         // ایجاد یا به‌روزرسانی عضویت در سازمان
@@ -733,6 +759,31 @@ export class SettingsService {
             joinedAt: new Date(),
           },
         });
+
+        if (membershipStatus === 'ACTIVE') {
+          const existingProfile = await tx.employee.findFirst({
+            where: { organizationId, userId: user.id },
+            select: { id: true, nationalId: true },
+          });
+          if (existingProfile && (item.nationalId !== undefined || item.nationalCode !== undefined)) {
+            await tx.employee.update({
+              where: { id: existingProfile.id },
+              data: { nationalId },
+            });
+          } else if (!existingProfile && nationalId) {
+            const matchingProfiles = await tx.employee.findMany({
+              where: { organizationId, nationalId, userId: null },
+              select: { id: true },
+              take: 2,
+            });
+            if (matchingProfiles.length === 1) {
+              await tx.employee.updateMany({
+                where: { id: matchingProfiles[0].id, userId: null },
+                data: { userId: user.id },
+              });
+            }
+          }
+        }
 
         // تعیین و انتساب نقش‌ها
         const requestedRoles: string[] = [];
@@ -761,21 +812,66 @@ export class SettingsService {
           matchedRoleIds.push(defaultRole.id);
         }
 
-        await tx.memberRole.deleteMany({
-          where: { memberId: membership.id },
-        });
+        let roleChanged = false;
+        if (!isOrganizationOwner) {
+          const previousRoleIds = await tx.memberRole.findMany({
+            where: { memberId: membership.id },
+            select: { roleId: true },
+          });
+          const previousRoleIdSet = new Set(previousRoleIds.map(({ roleId }) => roleId));
+          const nextRoleIdSet = new Set(matchedRoleIds);
+          roleChanged = previousRoleIdSet.size !== nextRoleIdSet.size ||
+            [...previousRoleIdSet].some((roleId) => !nextRoleIdSet.has(roleId));
 
-        if (matchedRoleIds.length > 0) {
-          await tx.memberRole.createMany({
-            data: Array.from(new Set(matchedRoleIds)).map((roleId) => ({
-              memberId: membership.id,
-              roleId,
-            })),
+          await tx.memberRole.deleteMany({ where: { memberId: membership.id } });
+          if (matchedRoleIds.length > 0) {
+            await tx.memberRole.createMany({
+              data: Array.from(nextRoleIdSet).map((roleId) => ({
+                memberId: membership.id,
+                roleId,
+              })),
+            });
+          }
+        }
+
+        const changedFields = isNewUser
+          ? ['username', 'firstName', 'lastName', 'email', 'phone', 'status', 'roles', ...(nationalId ? ['nationalId'] : [])]
+          : [
+              ...(previousUser!.username !== user.username ? ['username'] : []),
+              ...(previousUser!.firstName !== user.firstName ? ['firstName'] : []),
+              ...(previousUser!.lastName !== user.lastName ? ['lastName'] : []),
+              ...(previousUser!.email !== user.email ? ['email'] : []),
+              ...(previousUser!.phone !== user.phone ? ['phone'] : []),
+              ...(previousUser!.nationalId !== user.nationalId ? ['nationalId'] : []),
+              ...(previousUser!.status !== user.status ? ['status'] : []),
+              ...(roleChanged ? ['roles'] : []),
+              ...(typeof item.password === 'string' && item.password.trim().length > 0 ? ['password'] : []),
+            ];
+
+        if (changedFields.length > 0) {
+          const action = isNewUser
+            ? AuditAction.CREATE
+            : previousUser!.status !== user.status
+              ? user.status === 'ACTIVE' ? AuditAction.ACTIVATE : AuditAction.DISABLE
+              : AuditAction.UPDATE;
+          await tx.auditLog.create({
+            data: {
+              organizationId,
+              userId: actor.id,
+              action,
+              entity: 'USER_ACCOUNT',
+              entityId: user.id,
+              metadata: {
+                username: user.username,
+                changedFields,
+                ownerAccount: isOrganizationOwner,
+              },
+            },
           });
         }
       }
 
-      return this.getUsers(organizationId, user);
+      return this.getUsers(organizationId, actor);
     });
   }
 
