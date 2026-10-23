@@ -9,6 +9,7 @@ export type TestDataContext = {
 };
 
 export type TestDataCounts = Record<string, number>;
+export type TestDataSeedResult = { recordCounts: TestDataCounts };
 
 export function fixtureDate(now: Date, daysAgo: number) {
   const value = new Date(now);

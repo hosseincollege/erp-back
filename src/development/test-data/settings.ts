@@ -1,20 +1,57 @@
 import type { TestDataContext, TestDataCounts } from './context';
 import { fixtureUserId } from './context';
 
-const branches = [
-  ['TEST-CENTRAL', 'شعبه مرکزی تهران', 'تهران، خیابان ولیعصر، پلاک ۲۴۰'],
-  ['TEST-NORTH', 'شعبه کرج', 'کرج، بلوار شهید بهشتی، پلاک ۸۵'],
-  ['TEST-SOUTH', 'شعبه اصفهان', 'اصفهان، خیابان چهارباغ بالا، پلاک ۱۲۰'],
+const provinces = [
+  ['isfahan', 'اصفهان'], ['tehran', 'تهران'], ['east-azerbaijan', 'آذربایجان شرقی'], ['west-azerbaijan', 'آذربایجان غربی'],
+  ['ardabil', 'اردبیل'], ['alborz', 'البرز'], ['ilam', 'ایلام'], ['bushehr', 'بوشهر'], ['charmahal-bakhtiari', 'چهارمحال و بختیاری'],
+  ['south-khorasan', 'خراسان جنوبی'], ['razavi-khorasan', 'خراسان رضوی'], ['north-khorasan', 'خراسان شمالی'], ['khuzestan', 'خوزستان'],
+  ['zanjan', 'زنجان'], ['semnan', 'سمنان'], ['sistan-baluchestan', 'سیستان و بلوچستان'], ['fars', 'فارس'], ['qazvin', 'قزوین'],
+  ['qom', 'قم'], ['kurdistan', 'کردستان'], ['kerman', 'کرمان'], ['kermanshah', 'کرمانشاه'], ['kohgiluyeh-boyerahmad', 'کهگیلویه و بویراحمد'],
+  ['golestan', 'گلستان'], ['gilan', 'گیلان'], ['lorestan', 'لرستان'], ['mazandaran', 'مازندران'], ['markazi', 'مرکزی'],
+  ['hormozgan', 'هرمزگان'], ['hamadan', 'همدان'], ['yazd', 'یزد'],
 ] as const;
-const departments = [
-  ['TEST-OPS', 'عملیات و پشتیبانی', 0],
-  ['TEST-SALES', 'فروش سازمانی', 1],
-  ['TEST-FIN', 'مالی و حسابداری', 0],
-  ['TEST-HR', 'منابع انسانی', 0],
-  ['TEST-SUPPORT', 'خدمات مشتریان', 2],
-] as const;
+const branches = provinces.map(([provinceId, name]) => ({
+  code: `DEMO-PROVINCE-${provinceId.toUpperCase()}`,
+  name,
+  address: name,
+}));
+
+const organizationIdentity = {
+  name: 'گروه مپنا',
+  legalName: 'گروه مپنا',
+  logoUrl: `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none"><path d="M28 29h17c10 0 16 7 16 16v10c0 9 5 15 15 15h2" stroke="#2563eb" stroke-width="8" stroke-linecap="round"/><path d="M28 29h17c10 0 16 7 16 16v10c0 9 5 15 15 15h2" stroke="#60a5fa" stroke-width="3" stroke-linecap="round"/><rect x="14" y="15" width="27" height="27" rx="8" fill="#2563eb"/><rect x="65" y="56" width="24" height="24" rx="7" fill="#f59e0b"/><circle cx="76" cy="68" r="4" fill="#fff"/><circle cx="28" cy="29" r="4" fill="#dbeafe"/></svg>')}`,
+};
+
+function isLegacyDefaultLogo(value: string | null | undefined) {
+  if (!value?.startsWith('data:image/svg+xml,')) return false;
+  try {
+    const svg = decodeURIComponent(value.slice('data:image/svg+xml,'.length));
+    return svg.includes('M28 92 39 8h22') || svg.includes('rect x="12" y="12" width="76" height="76" rx="22" fill="#eaf2ff"');
+  } catch {
+    return false;
+  }
+}
+
+function isGeneratedOrganizationName(value: string | null | undefined) {
+  if (/\u0645\u062f\u06cc\u0631\s*\u0633\u06cc\u0633\u062a\u0645|system\s*admin/i.test(value ?? '')) return true;
+  return !value?.trim() || /(?:demo|sample|test|erp\s*pro|rah[y]ar|رهکام پاسارگاد|راهکارهای هوشمند رهکام پاسارگاد)|شرکت نمونه|سازمان نمونه|نام شرکت|آزمایشی|تست/i.test(value);
+}
 
 export async function seedSettings(ctx: TestDataContext): Promise<TestDataCounts> {
+  const organization = await ctx.db.organization.findUnique({
+    where: { id: ctx.organizationId },
+    select: { name: true, legalName: true, logoUrl: true },
+  });
+  if (organization) {
+    const identityUpdate: { name?: string; legalName?: string; logoUrl?: string } = {};
+    if (isGeneratedOrganizationName(organization.name)) identityUpdate.name = organizationIdentity.name;
+    if (isGeneratedOrganizationName(organization.legalName)) identityUpdate.legalName = organizationIdentity.legalName;
+    if (!organization.logoUrl || isLegacyDefaultLogo(organization.logoUrl)) identityUpdate.logoUrl = organizationIdentity.logoUrl;
+    if (Object.keys(identityUpdate).length) {
+      await ctx.db.organization.update({ where: { id: ctx.organizationId }, data: identityUpdate });
+    }
+  }
+
   await ctx.db.organizationSettings.upsert({
     where: { organizationId: ctx.organizationId },
     create: {
@@ -30,32 +67,14 @@ export async function seedSettings(ctx: TestDataContext): Promise<TestDataCounts
   });
 
   const savedBranches = [] as Array<{ id: string }>;
-  for (const [code, name, address] of branches) {
-    const legacyBranch = code === 'TEST-CENTRAL'
-      ? { name: 'شعبهٔ آزمایشی مرکزی', address: 'تهران، خیابان نمونه' }
-      : code === 'TEST-NORTH'
-        ? { name: 'شعبهٔ آزمایشی شمال', address: 'تهران، منطقهٔ شمال' }
-        : { name: 'شعبهٔ آزمایشی جنوب', address: 'تهران، منطقهٔ جنوب' };
+  for (const { code, name, address } of branches) {
     const branch = await ctx.db.branch.upsert({
       where: { organizationId_code: { organizationId: ctx.organizationId, code } },
-      create: { organizationId: ctx.organizationId, code, name, address, isMain: code === 'TEST-CENTRAL' },
+      create: { organizationId: ctx.organizationId, code, name, address, isMain: code === 'DEMO-PROVINCE-TEHRAN' },
       update: {},
       select: { id: true, name: true, address: true },
     });
-    if (branch.name === legacyBranch.name && branch.address === legacyBranch.address) {
-      await ctx.db.branch.update({ where: { id: branch.id }, data: { name, address } });
-    }
     savedBranches.push(branch);
-  }
-  for (const [code, name, branchIndex] of departments) {
-    const legacyName = ({ 'TEST-OPS': 'واحد عملیات آزمایشی', 'TEST-SALES': 'واحد فروش آزمایشی', 'TEST-FIN': 'واحد مالی آزمایشی', 'TEST-HR': 'واحد منابع انسانی آزمایشی', 'TEST-SUPPORT': 'واحد پشتیبانی آزمایشی' } as Record<string, string>)[code];
-    const department = await ctx.db.department.upsert({
-      where: { organizationId_code: { organizationId: ctx.organizationId, code } },
-      create: { organizationId: ctx.organizationId, branchId: savedBranches[branchIndex].id, code, name },
-      update: {},
-      select: { id: true, name: true },
-    });
-    if (department.name === legacyName) await ctx.db.department.update({ where: { id: department.id }, data: { name } });
   }
 
   const announcements = [
@@ -93,5 +112,5 @@ export async function seedSettings(ctx: TestDataContext): Promise<TestDataCounts
       branchId: index === 1 ? savedBranches[1].id : null,
     } });
   }
-  return { organizationSettings: 1, branches: branches.length, departments: departments.length, announcements: announcements.length };
+  return { organizationSettings: 1, branches: branches.length, departments: 0, announcements: announcements.length };
 }

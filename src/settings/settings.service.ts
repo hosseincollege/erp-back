@@ -269,7 +269,21 @@ export class SettingsService {
     });
 
     if (!membership) {
-      return { canView: false, canEdit: false };
+      const ownedOrganization = await this.prisma.organization.findFirst({
+        where: { id, ownerId: user.id, status: 'ACTIVE' },
+        select: { id: true },
+      });
+      if (ownedOrganization) {
+        return {
+          canView: true,
+          canEdit: true,
+          canViewRahcom: true,
+          canManageRahcom: true,
+          canViewAccounting: true,
+          canViewHumanResources: true,
+        };
+      }
+      return { canView: false, canEdit: false, canViewRahcom: false, canManageRahcom: false, canViewAccounting: false, canViewHumanResources: false };
     }
 
     const isOwner = membership.organization.ownerId === user.id;
@@ -280,8 +294,12 @@ export class SettingsService {
     );
     const canEdit = isOwner || permissions.has('settings.write');
     const canView = canEdit || permissions.has('settings.read');
+    const canManageRahcom = isOwner;
+    const canViewRahcom = isOwner;
+    const canViewAccounting = isOwner || permissions.has('accounting.read') || permissions.has('accounting.write');
+    const canViewHumanResources = isOwner || [...permissions].some((key) => key.startsWith('hr.'));
 
-    return { canView, canEdit };
+    return { canView, canEdit, canViewRahcom, canManageRahcom, canViewAccounting, canViewHumanResources };
   }
 
   async getOrganizationAppearance(id: string, user: AuthenticatedUser) {

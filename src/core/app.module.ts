@@ -17,6 +17,7 @@ import { SetupModule } from './setup/setup.module';
 import { StatisticsModule } from '../statistics/statistics.module';
 import { SettingsModule } from '../settings/settings.module';
 import { SupportModule } from '../support/support.module';
+import { RahcomModule } from '../rahcom/rahcom.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { SupportModule } from '../support/support.module';
     SupportModule,
     DashboardModule,
     DevelopmentModule,
+    RahcomModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -32,6 +32,7 @@ type AuthUser = {
   phone: string | null;
   firstName: string;
   lastName: string;
+  avatarUrl: string | null;
   status: string;
   isSystemUser: boolean;
   tokenVersion: number;
@@ -251,6 +252,7 @@ export class AuthService {
         username: user.username,
         firstName: user.firstName,
         lastName: user.lastName,
+        avatarUrl: user.avatarUrl,
         email: user.email,
         phone: user.phone,
         organizationId: membership?.organizationId ?? null,
@@ -290,6 +292,7 @@ export class AuthService {
           username: true,
           firstName: true,
           lastName: true,
+          avatarUrl: true,
           email: true,
           phone: true,
         },
@@ -459,6 +462,7 @@ export class AuthService {
         username: user.username,
         firstName: user.firstName,
         lastName: user.lastName,
+        avatarUrl: user.avatarUrl,
         email: user.email,
         organizationId,
       },
