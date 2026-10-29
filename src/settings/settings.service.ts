@@ -300,8 +300,8 @@ export class SettingsService {
     const canView = canEdit || permissions.has('settings.read');
     const canManageRahcom = isOwner || isOrganizationAdmin;
     const canViewRahcom = canManageRahcom || isDemoUser;
-    const canViewAccounting = isOwner || permissions.has('accounting.read') || permissions.has('accounting.write');
-    const canViewHumanResources = isOwner || [...permissions].some((key) => key.startsWith('hr.'));
+    const canViewAccounting = isOwner || isOrganizationAdmin || permissions.has('accounting.read') || permissions.has('accounting.write');
+    const canViewHumanResources = isOwner || isOrganizationAdmin || [...permissions].some((key) => key.startsWith('hr.'));
 
     return { canView, canViewSharedSettings: true, canEdit, canViewRahcom, canManageRahcom, canViewAccounting, canViewHumanResources };
   }
