@@ -7,6 +7,10 @@ import {
   IsString,
   IsUUID,
   IsDateString,
+  IsNotEmpty,
+  MaxLength,
+  Max,
+  ValidateIf,
   Min,
 } from 'class-validator';
 import {
@@ -15,29 +19,34 @@ import {
   TicketType,
   TicketVisibility,
 } from '@prisma/client';
+import { Transform } from 'class-transformer';
 
 export class UpdateTicketDto {
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined)
+  @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
   @IsString()
+  @IsNotEmpty()
+  @MaxLength(200)
   subject?: string;
 
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined)
   @IsString()
+  @MaxLength(10000)
   description?: string;
 
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined)
   @IsEnum(TicketType)
   type?: TicketType;
 
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined)
   @IsEnum(TicketStatus)
   status?: TicketStatus;
 
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined)
   @IsEnum(TicketPriority)
   priority?: TicketPriority;
 
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined)
   @IsEnum(TicketVisibility)
   visibility?: TicketVisibility;
 
@@ -47,15 +56,15 @@ export class UpdateTicketDto {
 
   @IsOptional()
   @IsUUID()
-  assigneeId?: string;
+  assigneeId?: string | null;
 
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined)
   @IsUUID()
   projectId?: string;
 
   @IsOptional()
   @IsDateString()
-  dueAt?: string;
+  dueAt?: string | null;
 
   // فیلدهای حرفه‌ای فرآیند Case Management مایکروسافت داینامیکس
   @IsOptional()
@@ -72,24 +81,30 @@ export class UpdateTicketDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(5000)
   resolution?: string;
 
   @IsOptional()
-  @IsNumber()
+  @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
+  @Max(999.99)
   billableHours?: number;
 
   @IsOptional()
   @IsDateString()
-  targetResolveAt?: string;
+  targetResolveAt?: string | null;
 }
 
 export class ResolveTicketDto {
+  @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
   @IsString()
+  @IsNotEmpty()
+  @MaxLength(5000)
   resolution: string;
 
   @IsOptional()
-  @IsNumber()
+  @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
+  @Max(999.99)
   billableHours?: number;
 }

@@ -40,6 +40,7 @@ import { UpdateDepartmentDto } from './organization/dto/update-department.dto';
 
 import { ImportOrganizationDto } from './company/dto/import-organization.dto';
 import { SaveRoleDto } from './roles/dto/save-role.dto';
+import { TrackVisitorPresenceDto } from './dto/track-visitor-presence.dto';
 
 @Controller('settings')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -82,9 +83,13 @@ export class SettingsController {
   @Public()
   @Post('public-presence')
   async trackPublicPresence(
-    @Body() body: { visitorId?: string; sessionId?: string; pageViewId?: string; path?: string; event?: 'ENTER' | 'HEARTBEAT' | 'EXIT' },
+    @Body() body: TrackVisitorPresenceDto,
     @Req() req: Request,
   ) {
+    const lifecycleFields = [body.sessionId, body.pageViewId, body.path, body.event];
+    if (lifecycleFields.some((field) => field !== undefined) && lifecycleFields.some((field) => !field)) {
+      throw new BadRequestException('Session, page view, path, and event must be provided together.');
+    }
     if (!body.visitorId) {
       throw new BadRequestException('شناسه بازدیدکننده الزامی است.');
     }
@@ -235,25 +240,29 @@ export class SettingsController {
   }
 
   @Get('roles/:organizationId')
-  async getRoles(@Param('organizationId') organizationId: string) {
+  async getRoles(
+    @Param('organizationId') organizationId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
     if (!organizationId || organizationId.trim() === '') {
       throw new BadRequestException('شناسه سازمان نامعتبر است.');
     }
 
-    return this.settingsService.getRoles(organizationId.trim());
+    return this.settingsService.getRoles(organizationId.trim(), user);
   }
 
   @Put('roles/:organizationId')
   async saveRoles(
     @Param('organizationId') organizationId: string,
     @Body() roles: SaveRoleDto[],
+    @CurrentUser() user: AuthenticatedUser,
   ) {
     if (!organizationId || organizationId.trim() === '') {
       throw new BadRequestException('شناسه سازمان نامعتبر است.');
     }
 
     const payload = Array.isArray(roles) ? roles : (roles as any)?.roles || [];
-    return this.settingsService.saveRoles(organizationId.trim(), payload);
+    return this.settingsService.saveRoles(organizationId.trim(), payload, user);
   }
 
   @Get('branches/:organizationId')
@@ -394,6 +403,19 @@ export class SettingsController {
     return this.settingsService.saveUsers(
       organizationId.trim(),
       usersList,
+      user,
+    );
+  }
+
+  @Delete('users/:organizationId/:userId')
+  async removeOrganizationUser(
+    @Param('organizationId') organizationId: string,
+    @Param('userId') userId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.settingsService.removeOrganizationUser(
+      organizationId.trim(),
+      userId.trim(),
       user,
     );
   }

@@ -17,8 +17,8 @@ const branches = provinces.map(([provinceId, name]) => ({
 }));
 
 const organizationIdentity = {
-  name: 'گروه مپنا',
-  legalName: 'گروه مپنا',
+  name: 'Rahkam Pasargad',
+  legalName: 'Rahkam Pasargad',
   logoUrl: `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none"><path d="M28 29h17c10 0 16 7 16 16v10c0 9 5 15 15 15h2" stroke="#2563eb" stroke-width="8" stroke-linecap="round"/><path d="M28 29h17c10 0 16 7 16 16v10c0 9 5 15 15 15h2" stroke="#60a5fa" stroke-width="3" stroke-linecap="round"/><rect x="14" y="15" width="27" height="27" rx="8" fill="#2563eb"/><rect x="65" y="56" width="24" height="24" rx="7" fill="#f59e0b"/><circle cx="76" cy="68" r="4" fill="#fff"/><circle cx="28" cy="29" r="4" fill="#dbeafe"/></svg>')}`,
 };
 
@@ -77,6 +77,20 @@ export async function seedSettings(ctx: TestDataContext): Promise<TestDataCounts
     savedBranches.push(branch);
   }
 
+  const organizationalUnits = [
+    { branchId: savedBranches[0].id, code: 'DEMO-UNIT-ISFAHAN-OPERATIONS', name: 'عملیات استان اصفهان' },
+    { branchId: savedBranches[0].id, code: 'DEMO-UNIT-ISFAHAN-SUPPORT', name: 'پشتیبانی استان اصفهان' },
+    { branchId: savedBranches[1].id, code: 'DEMO-UNIT-TEHRAN-OPERATIONS', name: 'عملیات استان تهران' },
+    { branchId: savedBranches[1].id, code: 'DEMO-UNIT-TEHRAN-SUPPORT', name: 'پشتیبانی استان تهران' },
+  ];
+  for (const unit of organizationalUnits) {
+    await ctx.db.department.upsert({
+      where: { organizationId_code: { organizationId: ctx.organizationId, code: unit.code } },
+      create: { organizationId: ctx.organizationId, ...unit },
+      update: {},
+    });
+  }
+
   const announcements = [
     ['برنامه نگهداری سامانه در پنجشنبه شب', 'به‌روزرسانی زیرساخت از ساعت ۲۲ تا ۲۳ انجام می‌شود؛ لطفاً عملیات مالی را پیش از این زمان ثبت کنید.'],
     ['دوره آموزشی سامانه فروش', 'کارگاه کار با فرایند ثبت سفارش و پیگیری مشتریان روز دوشنبه ساعت ۱۰ در شعبه کرج برگزار می‌شود.'],
@@ -112,5 +126,5 @@ export async function seedSettings(ctx: TestDataContext): Promise<TestDataCounts
       branchId: index === 1 ? savedBranches[1].id : null,
     } });
   }
-  return { organizationSettings: 1, branches: branches.length, departments: 0, announcements: announcements.length };
+  return { organizationSettings: 1, branches: branches.length, departments: organizationalUnits.length, announcements: announcements.length };
 }

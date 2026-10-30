@@ -43,7 +43,7 @@ export class ProjectsService {
       where: {
         organizationId,
         status: { not: 'ARCHIVED' },
-        ...(isAdmin ? {} : { OR: [{ members: { some: { userId: user.id } } }, { code: `RAHCOM-${organizationId}` }] }),
+        ...(isAdmin ? {} : { members: { some: { userId: user.id } } }),
       },
       include: {
         members: { where: { userId: user.id }, select: { role: true } },
@@ -53,17 +53,8 @@ export class ProjectsService {
     });
     return projects.map(({ members, ...project }) => ({
       ...project,
-      supportRole: members[0]?.role ?? (isAdmin ? 'ADMIN' : 'VIEWER'),
+      supportRole: isAdmin ? 'ADMIN' : (members[0]?.role ?? 'VIEWER'),
     }));
-  }
-
-  async getRahcomProject(user: AuthenticatedUser) {
-    const { organizationId } = await this.getSupportContext(user);
-    return this.prisma.project.upsert({
-      where: { code: `RAHCOM-${organizationId}` },
-      update: {},
-      create: { organizationId, code: `RAHCOM-${organizationId}`, name: 'Rahcom', description: 'Rahcom shared support tickets', status: 'ACTIVE' },
-    });
   }
 
   async assertSupportProjectAccess(user: AuthenticatedUser, projectId: string, forCreate = false) {
@@ -73,11 +64,10 @@ export class ProjectsService {
       include: { members: { where: { userId: user.id }, select: { role: true } } },
     });
     const member = project?.members[0];
-    const isRahcomProject = project?.code === `RAHCOM-${organizationId}`;
-    if (!project || (!member && !isAdmin && !isRahcomProject)) {
+    if (!project || (!member && !isAdmin)) {
       throw new ForbiddenException('به این پروژه دسترسی ندارید.');
     }
-    if (forCreate && member?.role === 'VIEWER' && !isAdmin && !isRahcomProject) {
+    if (forCreate && member?.role === 'VIEWER' && !isAdmin) {
       throw new ForbiddenException('دسترسی شما به این پروژه فقط مشاهده است.');
     }
     return project;
