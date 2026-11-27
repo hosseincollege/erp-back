@@ -16,6 +16,8 @@ server.use('/uploads', express.static(resolve(process.cwd(), 'uploads')));
 let initializationPromise: Promise<void> | null = null;
 
 const allowedOrigins = [
+  'https://bina-pardazesh.ir',
+  'https://www.bina-pardazesh.ir',
   'https://erp-front-opal.vercel.app',
   'http://localhost:3000',
   'http://localhost:3005',
@@ -82,7 +84,7 @@ if (process.env.VERCEL !== '1') {
     try {
       await initializeNestApp();
       const port = Number(process.env.PORT) || 3006;
-      server.listen(port, () => {
+      server.listen(port, '127.0.0.1', () => {
         logger.log(`ERP Pro API is running on port ${port}`);
       });
     } catch (error) {
