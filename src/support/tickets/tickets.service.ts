@@ -9,7 +9,7 @@ import { Injectable, NotFoundException, BadRequestException, ConflictException }
 import { PrismaService } from '../../core/prisma/prisma.service';
 import { CreateTicketDto } from './dto/create-ticket.dto';
 import { UpdateTicketDto, ResolveTicketDto } from './dto/update-ticket.dto';
-import { Prisma, TicketStatus } from '@prisma/client';
+import { Prisma, TicketPriority, TicketStatus } from '@prisma/client';
 import type { AuthenticatedUser } from '../../core/auth/strategies/jwt.strategy';
 import { ProjectsService } from '../projects/projects.service';
 
@@ -60,8 +60,8 @@ export class TicketsService {
   async findAll(
     user: AuthenticatedUser,
     filters: {
-      status?: string;
-      priority?: string;
+      status?: TicketStatus;
+      priority?: TicketPriority;
       search?: string;
       accountId?: string;
       contactId?: string;
@@ -84,8 +84,8 @@ export class TicketsService {
                   { projectId: null, creatorId: user.id },
                 ],
               },
-          status ? { status: status as any } : {},
-          priority ? { priority: priority as any } : {},
+          status ? { status } : {},
+          priority ? { priority } : {},
           accountId ? { accountId } : {},
           contactId ? { contactId } : {},
           search

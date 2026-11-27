@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { TicketsService } from './tickets.service';
 import { CreateTicketDto } from './dto/create-ticket.dto';
+import { ListTicketsQueryDto } from './dto/list-tickets-query.dto';
 import { ResolveTicketDto, UpdateTicketDto } from './dto/update-ticket.dto';
 import { JwtAuthGuard } from '../../core/auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../../core/auth/decorators/current-user.decorator';
@@ -31,12 +32,9 @@ export class TicketsController {
   @Get()
   findAll(
     @CurrentUser() user: AuthenticatedUser,
-    @Query('status') status?: string,
-    @Query('priority') priority?: string,
-    @Query('search') search?: string,
-    @Query('projectId') projectId?: string,
+    @Query() query: ListTicketsQueryDto,
   ) {
-    return this.ticketsService.findAll(user, { status, priority, search, projectId });
+    return this.ticketsService.findAll(user, query);
   }
 
   @Get(':id')
